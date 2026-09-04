@@ -28,7 +28,7 @@ const HELP_SNIPPET = `• Space — Play / Pause
 • Edit → Snap to Grid untuk magnet ke beat
 • Edit → Metronome untuk click saat play
 • File → Export / Download untuk mix ke WAV
-• Draft disimpan di localStorage browser`;
+• Draft disimpan di IndexedDB browser (audio ikut tersimpan)`;
 
 export default function App() {
     const [tracks, setTracks] = useState([]);
