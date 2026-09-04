@@ -413,7 +413,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .fx-bar-btn.primary:hover:not(:disabled){background:#5ee8ce;box-shadow:0 0 12px rgba(78,217,192,.35)}
 .fx-bar-btn.primary:disabled{opacity:.35;cursor:not-allowed}
 
-/* ===== Responsive ===== */
 /* ===== Crash screen (ErrorBoundary) ===== */
 .crash{max-width:560px;margin:14vh auto;padding:28px;background:var(--bg-strip);border:1px solid var(--line);border-radius:14px;font-family:'Inter',sans-serif}
 .crash h1{font-family:'Space Grotesk',sans-serif;font-size:19px;margin:0 0 10px;color:var(--text)}
@@ -421,12 +420,19 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .crash pre{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--text-dim);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto;margin:0 0 16px;white-space:pre-wrap}
 .crash button{font-family:'Inter',sans-serif;font-size:13px;font-weight:600;color:var(--bg);background:var(--teal);border:0;border-radius:8px;padding:9px 18px;cursor:pointer}
 
+/* ===== Responsive ===== */
 @media (max-width:760px){
   /* Topbar tidak boleh terpotong: brand + menu + transport dibiarkan wrap
      ke baris berikutnya. .menubar tidak punya height tetap, jadi aman. */
   .menubar{flex-wrap:wrap;gap:8px 12px;padding:8px 12px}
   .menubar-left{flex-wrap:wrap;gap:8px 14px;width:100%}
-  .menu-items{flex-wrap:wrap}
+  .menu-items{flex-wrap:wrap;position:relative;width:100%}
+  /* Dropdown di-anchor ke BARIS menu, bukan ke item-nya: item paling kanan
+     kalau di-anchor sendiri akan menjulur keluar viewport (Help: right 458 > vw 390).
+     position:static memindahkan containing block ke .menu-items, lalu left/right:0
+     membuatnya selebar baris menu. */
+  .menu-item{position:static}
+  .dropdown{left:0;right:0;min-width:0;max-height:56vh}
   .app{margin:8px 8px 30px}
   .modal,.modal.wide{max-width:96vw}
   .eq-bands{overflow-x:auto;padding-bottom:6px}

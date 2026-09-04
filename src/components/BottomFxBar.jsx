@@ -1,5 +1,5 @@
 import React from 'react';
-import { EFFECTS_BY_ID } from '../audio/effectsConfig.js';
+import { EFFECTS_BY_NAME } from '../audio/effectsConfig.js';
 
 /* Bottom FX bar — per-track effect rack.
    Muncul saat sebuah track dipilih. Menampilkan seluruh efek yang sudah
@@ -37,11 +37,11 @@ export default function BottomFxBar({ track, hasSelection, selStart, selEnd, onA
                 <div className="fx-rack">
                     {chain.length === 0 && <span className="fx-rack-empty">Belum ada efek di track ini — tambahkan lewat tombol di kanan.</span>}
                     {chain.map((fx, i) => {
-                        const meta = EFFECTS_BY_ID[fx.type] || null;
+                        const meta = EFFECTS_BY_NAME[fx.type] || null;
                         return (
                             <div key={i} className="fx-slot" title={meta ? meta.name : fx.type}>
                                 <span className="fx-slot-idx">{i + 1}</span>
-                                <span className="fx-slot-name" onClick={() => onEditFx && onEditFx(fx.type)}>
+                                <span className="fx-slot-name" onClick={() => meta && onEditFx && onEditFx(meta.id)}>
                                     {meta ? meta.name : fx.type}
                                 </span>
                                 <button className="fx-slot-x" onClick={() => onRemoveFx(i)} title="Hapus efek ini">

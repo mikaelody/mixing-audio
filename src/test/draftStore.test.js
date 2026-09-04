@@ -37,4 +37,20 @@ describe('draftStore (IndexedDB)', () => {
   it('draftAll mengembalikan array kosong saat belum ada draft', async () => {
     expect(await draftAll()).toEqual([])
   })
+
+  /* Pemangkasan 8-draft di saveDraft: kalau slice-nya salah arah, draft
+     TERBARU yang terhapus dan user kehilangan kerjaan terakhirnya. */
+  it('pemangkasan menyisakan 8 draft TERBARU', async () => {
+    for (let i = 1; i <= 11; i++) {
+      const k = 'kael-draft-' + (1700000000000 + i)
+      await draftPut(k, { key: k, tracks: [] })
+    }
+    const old = (await draftAll()).map((x) => x.key).sort().slice(0, -8)
+    for (const k of old) await draftDel(k)
+
+    const left = (await draftAll()).map((x) => x.key).sort()
+    expect(left).toHaveLength(8)
+    expect(left[0]).toBe('kael-draft-1700000000004')
+    expect(left[7]).toBe('kael-draft-1700000000011')
+  })
 })

@@ -9,7 +9,7 @@ const openMenu = (label) => {
   fireEvent.click(btn)
 }
 
-describe('Kael Mixing — UI & Functional', () => {
+describe('Mixing Audio — UI & Functional', () => {
   beforeEach(() => { localStorage.clear() })
   afterEach(() => { vi.restoreAllMocks() })
 

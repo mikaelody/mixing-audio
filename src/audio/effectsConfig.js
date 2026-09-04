@@ -195,3 +195,6 @@ export const EFFECTS = [
 export const EFFECT_GROUPS = ['Dynamics', 'EQ & Filter', 'Time-based', 'Restoration', 'Pitch & Time', 'Utility'];
 
 export const EFFECTS_BY_ID = Object.fromEntries(EFFECTS.map((e) => [e.id, e]));
+/* fxChain menyimpan NAMA tampilan (fx.type = 'Compressor'), bukan id, jadi
+   lookup dari rack/undo/draft harus lewat sini — bukan EFFECTS_BY_ID. */
+export const EFFECTS_BY_NAME = Object.fromEntries(EFFECTS.map((e) => [e.name, e]));

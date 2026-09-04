@@ -13,7 +13,7 @@ export default class ErrorBoundary extends React.Component {
     }
 
     componentDidCatch(err, info) {
-        console.error('Kael Mixing crash:', err, info);
+        console.error('Mixing Audio crash:', err, info);
     }
 
     render() {

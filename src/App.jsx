@@ -13,7 +13,7 @@ import { processEffect, destructiveBuffer } from './audio/applyEffect.js';
 import { EFFECTS } from './audio/effectsConfig.js';
 import { makeSampleBuffer, audioBufferToWav, cloneBuffer, buildEqNode, extractBufferRegion, replaceBufferRegion, logBands } from './audio/dsp.js';
 import { encodeBuffer } from './audio/exportEncoders.js';
-import { draftPut, draftAll } from './audio/draftStore.js';
+import { draftPut, draftAll, draftDel } from './audio/draftStore.js';
 
 let uid = 0;
 const nextId = () => ++uid;
@@ -481,6 +481,9 @@ export default function App() {
                     solo: t.solo,
                     color: t.color,
                     offset: t.offset || 0,
+                    /* ponytail: hanya NAMA efek yang disimpan, jadi draft memulihkan
+                       efek dengan parameter DEFAULT — bukan nilai yang di-tweak user.
+                       Serialisasi param per-node kalau itu mulai mengganggu. */
                     fx: (t.fxChain || []).map((f) => f.type),
                     /* Blob, bukan blob-URL: URL.createObjectURL mati begitu tab
                        ditutup, jadi draft lama selalu kehilangan audionya. */
@@ -488,6 +491,12 @@ export default function App() {
                 })),
             };
             await draftPut(key, draft);
+            /* ponytail: sisakan 8 draft terbaru — WAV penuh per track cepat
+               memenuhi kuota IndexedDB, dan simpan yang gagal karena kuota
+               cuma muncul sebagai pesan error. Bikin UI hapus manual kalau
+               user butuh kontrol lebih. */
+            const old = (await draftAll()).map((x) => x.key).sort().slice(0, -8);
+            for (const k of old) await draftDel(k);
             flash('Draft disimpan: ' + key.replace('kael-draft-', ''));
         } catch (e) {
             flash('Gagal simpan draft: ' + (e && e.message ? e.message : e));
@@ -864,6 +873,10 @@ export default function App() {
                 reconnect(nt);
                 pushHistory();
                 setTracks((prev) => prev.map((x) => (x.id === trackId ? nt : x)));
+                /* Rack hanya render kalau ada track terfokus (rackOpen = fxBarOpen
+                   && selected != null). Tanpa ini, efek dari topbar masuk ke
+                   fxChain tapi tidak pernah kelihatan di bottom bar. */
+                setSelected(trackId);
                 setFxBarOpen(true);
             } else if (res && res.playbackRate !== undefined) {
                 try {
@@ -1760,12 +1773,12 @@ export default function App() {
             {modal && modal.type === 'about' && (
                 <Modal title="What's New" onClose={() => setModal(null)}>
                     <div className="about-body">
-                        <div className="about-title">Kael Mixing v1.0</div>
+                        <div className="about-title">Mixing Audio v1.0</div>
                         <ul className="about-list">
                             <li>19 efek audio fungsional (Dynamics, EQ, Time-based, Restoration, Pitch, Utility)</li>
-                            <li>Undo / Redo + draft lokal (localStorage)</li>
+                            <li>Undo / Redo + draft lokal (IndexedDB — audio ikut tersimpan)</li>
                             <li>Rekaman mikrofon, load dari URL / sample</li>
-                            <li>Export mix ke WAV 44.1kHz</li>
+                            <li>Export mix ke WAV / MP3 / FLAC</li>
                         </ul>
                     </div>
                 </Modal>

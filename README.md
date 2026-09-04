@@ -1,4 +1,4 @@
-# Kael
+# Mixing Audio
 
 Multi-track audio editor & music composer — React + Tone.js.
 
@@ -37,8 +37,22 @@ TrackLane.jsx  ← render waveform + clip draggable
 ```bash
 npm run dev      # → http://localhost:5173
 npm run build    # build production ke dist/
-npm test         # Vitest (13 test)
+npm run preview  # cek hasil build sebelum deploy
+npm test         # Vitest (23 test)
 ```
+
+## Deploy
+
+Murni client-side: tanpa backend, tanpa database, tanpa upload — audio user tidak
+pernah keluar dari browsernya. Cukup static hosting mana pun.
+
+```bash
+npm run build            # hasil ada di dist/
+npx vercel deploy --prod # atau: netlify deploy --prod --dir=dist
+```
+
+Tanpa router, jadi tidak perlu SPA rewrite. Draft tersimpan di IndexedDB
+per-browser (tidak ikut pindah antar perangkat).
 
 ## Theme
 
