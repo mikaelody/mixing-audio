@@ -1,0 +1,31 @@
+{
+  "name": "omega-audio-studio",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Web-based multi-track audio editor & music composer (React + Tone.js)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
+    "libflacjs": "^5.6.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tone": "^14.8.49",
+    "wavesurfer.js": "^7.7.5"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@vitejs/plugin-react": "^4.3.1",
+    "fake-indexeddb": "^6.0.0",
+    "jsdom": "^30.0.1",
+    "vite": "^5.4.2",
+    "vitest": "^4.1.11"
+  }
+}
