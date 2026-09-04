@@ -31,11 +31,16 @@ const Player = vi.fn().mockImplementation(() => ({
   toDestination: vi.fn().mockReturnThis(),
 }))
 
-const Gain = vi.fn().mockImplementation(() => ({
-  gain: { value: 0 },
-  connect: vi.fn().mockReturnThis(),
-  disconnect: vi.fn().mockReturnThis(),
-}))
+/* function, bukan arrow: applyEffect memanggilnya dengan `new`, dan arrow
+   function bukan constructor (vitest 4 melempar "is not a constructor"). */
+const Gain = vi.fn(function (value, units) {
+  return {
+    gain: { value, units },
+    connect: vi.fn().mockReturnThis(),
+    disconnect: vi.fn().mockReturnThis(),
+    dispose: vi.fn(),
+  }
+})
 
 const Volume = vi.fn().mockImplementation(() => ({
   volume: { value: 0 },

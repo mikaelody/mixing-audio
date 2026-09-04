@@ -9,20 +9,27 @@ import Modal from './Modal';
 import { processEffect } from '../audio/applyEffect';
 
 /* Effect configuration popup.
-   Props: effect (EFFECTS_BY_ID entry), onApply(params), onClose, previewBuffer() -> AudioBuffer|null */
-export default function EffectModal({ effect, onApply, onClose, previewBuffer }) {
+   Props: effect (EFFECTS_BY_ID entry), onApply(params), onClose, previewBuffer() -> AudioBuffer|null,
+   initialParams (nilai tersimpan saat mengedit efek yang sudah terpasang) */
+export default function EffectModal({ effect, onApply, onClose, previewBuffer, initialParams }) {
     const eff = effect;
     const [params, setParams] = useState(() => {
         const p = {};
         (eff.fields || []).forEach((f) => {
             if (f.def !== undefined) p[f.id] = f.def;
         });
-        return p;
+        /* Klik chip di fx rack = edit: mulai dari nilai yang benar-benar dipakai,
+           bukan default — kalau tidak, Apply diam-diam mereset parameter user. */
+        return initialParams ? { ...p, ...initialParams } : p;
     });
     const setP = (id, v) => setParams((prev) => ({ ...prev, [id]: v }));
 
     const bandCount = eff.bands ? eff.bands.length : 0;
-    const [eqBands, setEqBands] = useState(() => Array(bandCount).fill(0));
+    /* Band EQ hidup di state terpisah dari `params`, jadi ia juga harus dipulihkan
+       dari initialParams — kalau tidak, mengedit EQ terpasang mereset semua band ke 0. */
+    const [eqBands, setEqBands] = useState(() =>
+        Array.from({ length: bandCount }, (_, i) => (initialParams && initialParams['g' + i] !== undefined ? initialParams['g' + i] : 0)),
+    );
 
     const [preview, setPreview] = useState(false);
     const [previewReady, setPreviewReady] = useState(false);

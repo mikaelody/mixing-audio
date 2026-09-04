@@ -11,7 +11,10 @@ export async function processEffect(eff, p) {
     switch (eff.id) {
         /* ---------- Dynamics ---------- */
         case 'gain': {
-            const g = new Tone.Gain(p.gainDb || 0);
+            /* 'decibels' WAJIB: default Tone.Gain adalah gain linear, jadi -24
+               diartikan −24× (inversi fase + amplifikasi 24 kali → clipping),
+               bukan -24 dB seperti yang tertulis di slider. */
+            const g = new Tone.Gain(p.gainDb || 0, 'decibels');
             return { fx: { type: 'Gain', node: g } };
         }
         case 'compressor':
@@ -74,9 +77,14 @@ export async function processEffect(eff, p) {
 
         /* ---------- Pitch & Time ---------- */
         case 'speedPitch':
-            return { playbackRate: p.spRate };
+            /* pitchComp:0 — efek ini MEMANG ingin pitch ikut bergeser (efek piringan),
+               jadi kompensasi apa pun dari playbackRate sebelumnya dimatikan. */
+            return { playbackRate: p.spRate, pitchComp: 0 };
         case 'playbackRate':
-            return { playbackRate: p.prRate };
+            /* playbackRate r menggeser pitch sebesar 12·log2(r) semitone. Untuk
+               "Preserve Pitch" kita geser balik sebanyak itu — tanpa ini toggle-nya
+               cuma hiasan dan efek ini identik dengan Speed Up / Slow Down. */
+            return { playbackRate: p.prRate, pitchComp: p.prPreserve ? -12 * Math.log2(p.prRate || 1) : 0 };
 
         /* ---------- Utility (destructive) ---------- */
         case 'fadeIn':

@@ -49,8 +49,11 @@ Dua mode berbeda, dan ini penting dipahami:
 | Restoration (2) | Noise Reduction (Voice), Audio Repair |
 | Pitch & Time (2) | Speed Up / Slow Down (pitch), Speed / Playback Rate |
 
-Efek yang terpasang muncul sebagai chip di **fx rack** (bar bawah). Klik nama chip
-untuk mengedit parameternya, klik `✕` untuk melepasnya.
+Efek yang terpasang muncul sebagai chip di **fx rack** (bar bawah). Satu track bisa
+menampung berapa pun efek sekaligus — semuanya tampil berurutan sesuai rantai
+pemrosesan. Klik nama chip untuk mengedit parameternya (nilai yang tersimpan ikut
+terisi, dan Apply mengganti chip itu, bukan menambah duplikat), klik `✕` untuk
+melepasnya. Melepas efek bisa di-undo.
 
 ### Export
 `File → Export / Download`, pilih **WAV** (16-bit PCM), **MP3** (lamejs, bitrate
@@ -208,8 +211,9 @@ dari satu sumber, bukan angka ajaib yang tersebar.
 ## Catatan teknis
 
 - `wavesurfer.js` masih terdaftar di `package.json` tapi tidak dipakai — rendering waveform digambar sendiri di canvas. Aman untuk dihapus.
-- Undo menyimpan metadata track (volume, pan, efek, offset), bukan salinan buffer audio — 40 langkah tetap ringan di memori.
-- Draft menyimpan **nama** efek, bukan nilai parameternya, jadi efek pulih dengan setting default. Serialisasi parameter penuh belum diperlukan sejauh ini.
+- Undo menyimpan metadata track (volume, pan, efek + parameternya, playback rate, offset), bukan salinan buffer audio — 40 langkah tetap ringan di memori. Efek destruktif (fade, reverse, normalize, …) mengubah buffer, jadi undo untuk efek itu memulihkan metadata saja, bukan sampelnya.
+- Draft dan undo menyimpan `id` + parameter tiap efek, jadi node dibangun ulang dengan nilai yang sama — bukan default.
+- Speed / Playback Rate bukan node di rantai efek (ia properti player), tapi tetap tampil sebagai slot bertanda `R` di fx bar supaya bisa diedit atau dilepas seperti efek lain.
 
 ---
 

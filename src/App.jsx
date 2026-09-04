@@ -11,12 +11,40 @@ import SelectionBar from './components/SelectionBar.jsx';
 import BottomFxBar from './components/BottomFxBar.jsx';
 import { processEffect, destructiveBuffer } from './audio/applyEffect.js';
 import { EFFECTS } from './audio/effectsConfig.js';
-import { makeSampleBuffer, audioBufferToWav, cloneBuffer, buildEqNode, extractBufferRegion, replaceBufferRegion, logBands } from './audio/dsp.js';
+import { makeSampleBuffer, audioBufferToWav, cloneBuffer, extractBufferRegion, replaceBufferRegion, logBands } from './audio/dsp.js';
 import { encodeBuffer } from './audio/exportEncoders.js';
 import { draftPut, draftAll, draftDel } from './audio/draftStore.js';
 
 let uid = 0;
 const nextId = () => ++uid;
+
+/* fxChain <-> snapshot. Node Tone tidak bisa diserialisasi, tapi id + params
+   bisa — dan itu cukup untuk membangun ulang node yang IDENTIK. Menyimpan
+   nama saja (versi lama) membuat undo/draft memulihkan efek dengan parameter
+   default dan membuat export melewatinya. */
+const serializeFx = (t) => (t.fxChain || []).map((f) => ({ type: f.type, id: f.id, params: f.params || {} }));
+
+/* Bangun ulang fxChain dari snapshot. Menerima format lama (array nama) supaya
+   draft & undo history yang sudah ada tidak pecah — nama saja berarti parameter
+   default, sama seperti perilaku sebelumnya. */
+async function rebuildFxChain(fxSnap) {
+    const out = [];
+    for (const f of fxSnap || []) {
+        const rec = typeof f === 'string' ? { type: f, id: null, params: {} } : f;
+        const eff = EFFECTS.find((e) => e.id === rec.id) || EFFECTS.find((e) => e.name === rec.type);
+        if (!eff) continue;
+        try {
+            const res = await processEffect(eff, rec.params || {});
+            if (res && res.fx && res.fx.node) out.push({ type: res.fx.type, id: eff.id, params: rec.params || {}, node: res.fx.node });
+        } catch (e) {}
+    }
+    return out;
+}
+
+/* Tone.Panner default-nya channelCount:1 explicit, yang me-downmix stereo jadi
+   mono (−3 dB, kanal kanan hilang). Semua panner di app ini lewat sini supaya
+   tidak ada satu pun jalur yang diam-diam memono-kan audio user. */
+const makePanner = (pan = 0) => new Tone.Panner({ pan, channelCount: 2 });
 
 const HELP_SNIPPET = `• Space — Play / Pause
 • Drag audio ke area track untuk menambah
@@ -143,7 +171,9 @@ export default function App() {
                     mute: t.mute,
                     solo: t.solo,
                     color: t.color,
-                    fx: (t.fxChain || []).map((f) => f.type), // types only; fx nodes rebuilt below
+                    fx: serializeFx(t), // id + params: node dibangun ulang identik
+                    playbackRate: t.playbackRate || 1,
+                    pitchComp: t.pitchComp || 0,
                     offset: t.offset || 0,
                 })),
             ),
@@ -157,7 +187,7 @@ export default function App() {
         if (!histRef.current.length) return flash('Tidak ada history');
         const prev = histRef.current.pop();
         setHistory([...histRef.current]);
-        redoRef.current.push(JSON.stringify(tracks.map((t) => ({ id: t.id, name: t.name, volumeDb: t.volumeDb, pan: t.pan, mute: t.mute, solo: t.solo, color: t.color, fx: (t.fxChain || []).map((f) => f.type), offset: t.offset || 0 }))));
+        redoRef.current.push(JSON.stringify(tracks.map((t) => ({ id: t.id, name: t.name, volumeDb: t.volumeDb, pan: t.pan, mute: t.mute, solo: t.solo, color: t.color, fx: serializeFx(t), playbackRate: t.playbackRate || 1, pitchComp: t.pitchComp || 0, offset: t.offset || 0 }))));
         setRedoStack([...redoRef.current]);
         restoreFromJson(prev);
         flash('Undo');
@@ -167,33 +197,29 @@ export default function App() {
         if (!redoRef.current.length) return flash('Tidak ada redo');
         const next = redoRef.current.pop();
         setRedoStack([...redoRef.current]);
-        histRef.current.push(JSON.stringify(tracks.map((t) => ({ id: t.id, name: t.name, volumeDb: t.volumeDb, pan: t.pan, mute: t.mute, solo: t.solo, color: t.color, fx: (t.fxChain || []).map((f) => f.type), offset: t.offset || 0 }))));
+        histRef.current.push(JSON.stringify(tracks.map((t) => ({ id: t.id, name: t.name, volumeDb: t.volumeDb, pan: t.pan, mute: t.mute, solo: t.solo, color: t.color, fx: serializeFx(t), playbackRate: t.playbackRate || 1, pitchComp: t.pitchComp || 0, offset: t.offset || 0 }))));
         setHistory([...histRef.current]);
         restoreFromJson(next);
         flash('Redo');
     }, [tracks]);
 
     /* Rebuild a track list from a JSON snapshot. Audio buffers survive because
-     destructive edits replace t.buf (not the file); fx nodes are re-created by type. */
-    const restoreFromJson = (json) => {
+     destructive edits replace t.buf (not the file); fx nodes are re-created from
+     id + params lewat rebuildFxChain, jadi parameter yang di-tweak user kembali utuh. */
+    const restoreFromJson = async (json) => {
         try {
             const snap = JSON.parse(json);
             const byId = {};
             tracks.forEach((t) => (byId[t.id] = t));
-            const newTracks = snap
-                .map((s) => {
-                    const old = byId[s.id];
-                    if (!old) return null;
-                    const nt = { ...old, name: s.name, volumeDb: s.volumeDb, pan: s.pan, mute: s.mute, solo: s.solo, color: s.color, offset: s.offset || 0, fxChain: [] };
-                    // rebuild fx nodes from type (node params are defaults — acceptable for undo)
-                    s.fx.forEach((type) => {
-                        const eff = EFFECTS.find((e) => e.name === type);
-                        if (eff) nt.fxChain.push({ type, node: makeNodeFor(eff) });
-                    });
-                    reconnect(nt);
-                    return nt;
-                })
-                .filter(Boolean);
+            const newTracks = [];
+            for (const s of snap) {
+                const old = byId[s.id];
+                if (!old) continue;
+                const nt = { ...old, name: s.name, volumeDb: s.volumeDb, pan: s.pan, mute: s.mute, solo: s.solo, color: s.color, offset: s.offset || 0, playbackRate: s.playbackRate || 1, pitchComp: s.pitchComp || 0, fxChain: [] };
+                nt.fxChain = await rebuildFxChain(s.fx);
+                reconnect(nt);
+                newTracks.push(nt);
+            }
             setTracks(newTracks);
         } catch (e) {
             flash('Undo gagal: ' + (e && e.message ? e.message : e));
@@ -205,12 +231,34 @@ export default function App() {
         try {
             if (t.player) {
                 t.player.disconnect();
-                // chain: player → panner → (fxChain) → volume → meter → destination
+                /* playbackRate hidup di objek track, bukan cuma di instance player —
+                   setiap edit destruktif membuat Player baru, dan tanpa baris ini
+                   kecepatan yang di-set user balik ke 1x tanpa pemberitahuan. */
+                if (t.playbackRate) t.player.playbackRate = t.playbackRate;
+                /* Preserve Pitch: satu PitchShift dikelola di sini (bukan di fxChain,
+                   supaya tidak muncul sebagai slot yang bisa dihapus user dan tidak
+                   ikut hilang saat chain diedit). */
+                if (t.pitchComp) {
+                    if (!t._pitchNode) t._pitchNode = new Tone.PitchShift();
+                    t._pitchNode.pitch = t.pitchComp;
+                } else if (t._pitchNode) {
+                    try {
+                        t._pitchNode.dispose();
+                    } catch (e) {}
+                    t._pitchNode = null;
+                }
+                // chain: player → panner → (pitchComp) → (fxChain) → volume → meter → destination
                 let node = t.player;
                 if (t.panner) {
                     try {
                         node.connect(t.panner);
                         node = t.panner;
+                    } catch (e) {}
+                }
+                if (t._pitchNode) {
+                    try {
+                        node.connect(t._pitchNode);
+                        node = t._pitchNode;
                     } catch (e) {}
                 }
                 for (const fx of t.fxChain || []) {
@@ -233,7 +281,7 @@ export default function App() {
 
     const makeTrack = async (name, buf, offset = 0) => {
         const player = new Tone.Player({ url: buf, loop: false });
-        const panner = new Tone.Panner(0);
+        const panner = makePanner(0);
         const meter = new Tone.Meter({ normalRange: false });
         player.chain(panner, meter);
         const t = { id: nextId(), name, buf, player, panner, meter, fxChain: [], volumeDb: 0, pan: 0, mute: false, solo: false, color: trackColor(tracks.length), offset };
@@ -272,7 +320,7 @@ export default function App() {
     /* empty track (no audio yet) — from the sidebar "+ Add Track" button */
     const addTrack = () => {
         const player = new Tone.Player({ loop: false });
-        const panner = new Tone.Panner(0);
+        const panner = makePanner(0);
         const meter = new Tone.Meter({ normalRange: false });
         player.chain(panner, meter);
         const t = { id: nextId(), name: 'Track ' + (tracks.length + 1), buf: null, player, panner, meter, fxChain: [], volumeDb: 0, pan: 0, mute: false, solo: false, color: trackColor(tracks.length), offset: 0, collapsed: false };
@@ -484,7 +532,9 @@ export default function App() {
                     /* ponytail: hanya NAMA efek yang disimpan, jadi draft memulihkan
                        efek dengan parameter DEFAULT — bukan nilai yang di-tweak user.
                        Serialisasi param per-node kalau itu mulai mengganggu. */
-                    fx: (t.fxChain || []).map((f) => f.type),
+                    fx: serializeFx(t),
+                    playbackRate: t.playbackRate || 1,
+                    pitchComp: t.pitchComp || 0,
                     /* Blob, bukan blob-URL: URL.createObjectURL mati begitu tab
                        ditutup, jadi draft lama selalu kehilangan audionya. */
                     wav: t.buf ? audioBufferToWav(t.buf) : null,
@@ -522,7 +572,7 @@ export default function App() {
                 const s = d.tracks[i];
                 const buf = s.wav ? await makeBuffer(await s.wav.arrayBuffer()) : null;
                 const player = buf ? new Tone.Player({ url: buf, loop: false }) : new Tone.Player();
-                const panner = new Tone.Panner(s.pan || 0);
+                const panner = makePanner(s.pan || 0);
                 const meter = new Tone.Meter({ normalRange: false });
                 player.chain(panner, meter);
                 player.volume.value = s.volumeDb || 0;
@@ -534,7 +584,9 @@ export default function App() {
                     player,
                     panner,
                     meter,
-                    fxChain: (s.fx || []).map((type) => ({ type, node: makeNodeFor(EFFECTS.find((e) => e.name === type) || {}) })),
+                    fxChain: await rebuildFxChain(s.fx),
+                    playbackRate: s.playbackRate || 1,
+                    pitchComp: s.pitchComp || 0,
                     volumeDb: s.volumeDb || 0,
                     pan: s.pan || 0,
                     mute: !!s.mute,
@@ -815,26 +867,46 @@ export default function App() {
         const _cfg = cfg || { fileName: 'kael-mixing-mix.wav', format: 'wav', bitDepth: 16, dither: false, channels: 2, range: 'whole' };
         try {
             if (!tracks.length) return flash('Tidak ada track untuk diekspor');
-            const dur = Math.max(...tracks.map((t) => (t.buf ? t.buf.duration + (t.offset || 0) : 0)), 1);
+            /* rate > 1 memendekkan klip, jadi durasi render ikut dibagi rate —
+               kalau tidak, ekspor kepanjangan (atau terpotong saat rate < 1). */
+            const dur = Math.max(...tracks.map((t) => (t.buf ? t.buf.duration / (t.playbackRate || 1) + (t.offset || 0) : 0)), 1);
             const sr = 44100;
             const numCh = _cfg.channels === 1 ? 1 : 2;
-            const ctx = new OfflineAudioContext(numCh, Math.ceil(dur * sr), sr);
-            for (const t of tracks) {
-                if (!t.buf) continue;
-                /* skip muted tracks, and non-soloed tracks when any track is soloed */
-                if (t.mute) continue;
-                if (tracks.some((x) => x.solo) && !t.solo) continue;
-                const src = ctx.createBufferSource();
-                src.buffer = t.buf;
-                const g = ctx.createGain();
-                g.gain.value = Math.pow(10, (t.volumeDb || 0) / 20);
-                const p = ctx.createStereoPanner();
-                p.pan.value = t.pan || 0;
-                src.connect(g).connect(p).connect(ctx.destination);
-                /* start each clip at its timeline offset — joining tracks end-to-end */
-                src.start(t.offset || 0);
-            }
-            const out = await ctx.startRendering();
+            /* Tone.Offline, bukan OfflineAudioContext mentah: node Tone terikat pada
+               context tempat ia dibuat, jadi fxChain yang hidup di context online
+               tidak bisa dipakai di sini. Di dalam callback ini processEffect() yang
+               sama dipanggil ulang dengan params tersimpan, sehingga hasil ekspor
+               memakai jalur DSP yang identik dengan yang didengar user. */
+            const renderedBuf = await Tone.Offline(async () => {
+                for (const t of tracks) {
+                    if (!t.buf) continue;
+                    /* skip muted tracks, and non-soloed tracks when any track is soloed */
+                    if (t.mute) continue;
+                    if (tracks.some((x) => x.solo) && !t.solo) continue;
+                    const src = new Tone.Player(t.buf);
+                    src.playbackRate = t.playbackRate || 1;
+                    /* channelCount:2 lewat makePanner — default Tone (1, explicit)
+                       me-downmix stereo jadi mono (−3 dB, kanal kanan hilang). */
+                    const panner = makePanner(t.pan || 0);
+                    const gain = new Tone.Gain(Math.pow(10, (t.volumeDb || 0) / 20));
+                    const fxNodes = [];
+                    /* Preserve Pitch ikut dirender, kalau tidak hasil ekspor beda
+                       dari yang didengar user di timeline. */
+                    if (t.pitchComp) fxNodes.push(new Tone.PitchShift({ pitch: t.pitchComp }));
+                    for (const fx of t.fxChain || []) {
+                        const eff = EFFECTS.find((e) => e.id === fx.id);
+                        if (!eff) continue; /* efek lama dari draft/undo tanpa id — dilewati */
+                        try {
+                            const res = await processEffect(eff, fx.params || {});
+                            if (res && res.fx && res.fx.node) fxNodes.push(res.fx.node);
+                        } catch (e) {}
+                    }
+                    src.chain(panner, ...fxNodes, gain, Tone.getDestination());
+                    /* start each clip at its timeline offset — joining tracks end-to-end */
+                    src.start(t.offset || 0);
+                }
+            }, dur, numCh, sr);
+            const out = renderedBuf.get ? renderedBuf.get() : renderedBuf;
             const blob = await encodeBuffer(out, _cfg);
             const name = (_cfg.fileName && _cfg.fileName.split('/').pop()) || 'kael-mixing-mix.wav';
             downloadBlob(blob, name);
@@ -846,7 +918,7 @@ export default function App() {
     const openExport = () => setModal({ type: 'export' });
 
     /* ---------- effects ---------- */
-    const onEffectApply = async (trackId, effectId, params) => {
+    const onEffectApply = async (trackId, effectId, params, fxIndex = null) => {
         const eff = EFFECTS.find((e) => e.id === effectId);
         if (!eff) return flash('Efek tidak dikenal');
         const t = tracks.find((x) => x.id === trackId);
@@ -863,13 +935,30 @@ export default function App() {
                     } catch (e) {}
                 }
                 const player = new Tone.Player({ url: nb, loop: false }).toDestination();
-                const nt = { ...t, buf: nb, player, fxChain: [] };
+                /* fxChain DIPERTAHANKAN: node Tone hidup terpisah dari Player, jadi
+                   edit destruktif cuma perlu disambung ulang. Mengosongkannya bikin
+                   semua efek yang sudah dipasang user hilang tanpa peringatan. */
+                const nt = { ...t, buf: nb, player };
                 reconnect(nt);
                 pushHistory();
                 setTracks((prev) => prev.map((x) => (x.id === trackId ? nt : x)));
             } else if (res && res.fx) {
-                /* non-destructive: append node to fxChain */
-                const nt = { ...t, fxChain: [...(t.fxChain || []), res.fx] };
+                /* non-destructive: fxIndex != null berarti user mengedit efek yang
+                   SUDAH ada (klik chip) — ganti di tempat, jangan tumpuk duplikat. */
+                const chain = [...(t.fxChain || [])];
+                /* id + params disimpan bersama node: export me-render ulang efek di
+                   OfflineContext (node Tone terikat ke context-nya), dan tanpa ini
+                   fxChain tidak punya cukup info untuk dibangun ulang. */
+                const entry = { ...res.fx, id: effectId, params };
+                if (fxIndex != null && chain[fxIndex]) {
+                    try {
+                        chain[fxIndex].node.dispose();
+                    } catch (e) {}
+                    chain[fxIndex] = entry;
+                } else {
+                    chain.push(entry);
+                }
+                const nt = { ...t, fxChain: chain };
                 reconnect(nt);
                 pushHistory();
                 setTracks((prev) => prev.map((x) => (x.id === trackId ? nt : x)));
@@ -879,11 +968,18 @@ export default function App() {
                 setSelected(trackId);
                 setFxBarOpen(true);
             } else if (res && res.playbackRate !== undefined) {
+                /* Simpan di objek track — reconnect() memasangnya ulang ke setiap
+                   Player baru, jadi kecepatan tidak hilang setelah edit destruktif.
+                   pitchComp = semitone koreksi untuk "Preserve Pitch"; reconnect()
+                   yang menyisipkan/melepas node PitchShift-nya. */
+                const nt = { ...t, playbackRate: res.playbackRate, pitchComp: res.pitchComp || 0 };
                 try {
-                    t.player.playbackRate = res.playbackRate;
+                    nt.player.playbackRate = res.playbackRate;
                 } catch (e) {}
+                reconnect(nt);
                 pushHistory();
-                flash(`Playback rate ${res.playbackRate}x`);
+                setTracks((prev) => prev.map((x) => (x.id === trackId ? nt : x)));
+                flash(`Playback rate ${res.playbackRate}x` + (res.pitchComp ? ' (pitch dipertahankan)' : ''));
                 return;
             }
             flash('Efek diterapkan');
@@ -893,11 +989,15 @@ export default function App() {
     };
 
     const removeFx = (trackId, index) => {
+        pushHistory(); // hapus efek harus bisa di-undo, sama seperti menambahnya
         setTracks((prev) =>
             prev.map((t) => {
                 if (t.id !== trackId) return t;
-                const fxChain = (t.fxChain || []).filter((_, i) => i !== index);
-                const nt = { ...t, fxChain };
+                const chain = t.fxChain || [];
+                try {
+                    if (chain[index] && chain[index].node) chain[index].node.dispose();
+                } catch (e) {}
+                const nt = { ...t, fxChain: chain.filter((_, i) => i !== index) };
                 reconnect(nt);
                 return nt;
             }),
@@ -935,10 +1035,27 @@ export default function App() {
         if (trackId == null) return flash('Pilih track dulu');
         setModal({ type: 'effect', trackId, effectId: null });
     };
-    /* Bottom FX rack — buka modal parameter untuk satu efek yang sudah terpasang. */
-    const openTrackEffectEditor = (trackId, effectId) => {
+    /* Bottom FX rack — buka modal parameter untuk satu efek yang sudah terpasang.
+       fxIndex ikut dibawa supaya Apply MENGGANTI slot itu, bukan menambah duplikat. */
+    const openTrackEffectEditor = (trackId, effectId, fxIndex) => {
         if (trackId == null || !effectId) return;
-        setModal({ type: 'effect', trackId, effectId });
+        setModal({ type: 'effect', trackId, effectId, fxIndex });
+    };
+
+    /* Nilai awal modal saat MENGEDIT efek terpasang. Dua sumber: slot fxChain
+       (punya params) dan playbackRate yang hidup di objek track, bukan di chain. */
+    const effectInitialParams = (m) => {
+        if (!m) return undefined;
+        const t = tracks.find((x) => x.id === m.trackId);
+        if (!t) return undefined;
+        if (m.fxIndex != null) return ((t.fxChain || [])[m.fxIndex] || {}).params;
+        if (m.effectId === 'playbackRate' && Math.abs((t.playbackRate || 1) - 1) > 1e-6) {
+            return { prRate: t.playbackRate, prPreserve: !!t.pitchComp };
+        }
+        if (m.effectId === 'speedPitch' && Math.abs((t.playbackRate || 1) - 1) > 1e-6 && !t.pitchComp) {
+            return { spRate: t.playbackRate };
+        }
+        return undefined;
     };
 
     /* Process ONLY the selected region of a clip's buffer. Uses the same
@@ -959,8 +1076,9 @@ export default function App() {
         try {
             let nb;
             if (eff.id === 'speedPitch' || eff.id === 'playbackRate') {
-                flash('Efek ini berlaku untuk seluruh track, bukan seleksi');
-                return;
+                /* Kecepatan adalah properti player, bukan sampel — tidak ada artinya
+                   per-region. Alihkan ke jalur seluruh track daripada menolak. */
+                return onEffectApply(trackId, effectId, params);
             }
             const slice = extractBufferRegion(t.buf, start, end);
             if (!slice) return flash('Seleksi kosong');
@@ -985,7 +1103,9 @@ export default function App() {
                 } catch (e) {}
             }
             const player = new Tone.Player({ url: nb, loop: false }).toDestination();
-            const nt = { ...t, buf: nb, player, fxChain: [] };
+            /* fxChain dipertahankan — efek realtime yang sudah dipasang user tidak
+               ada urusannya dengan region yang baru saja di-bake. */
+            const nt = { ...t, buf: nb, player };
             reconnect(nt);
             pushHistory();
             setTracks((prev) => prev.map((x) => (x.id === trackId ? nt : x)));
@@ -1156,7 +1276,7 @@ export default function App() {
                         } catch (e) {}
                     }
                     const player = new Tone.Player({ url: buf, loop: false }).toDestination();
-                    const panner = new Tone.Panner(t.pan || 0);
+                    const panner = makePanner(t.pan || 0);
                     const meter = new Tone.Meter({ normalRange: false });
                     player.chain(panner, meter);
                     const nt = { ...t, buf, player, panner, meter };
@@ -1736,17 +1856,20 @@ export default function App() {
                     onAddEffect={() => openTrackEffectPicker(selected)}
                     onAddToSelection={openSelectionEffectPicker}
                     onRemoveFx={(i) => removeFx(selected, i)}
-                    onEditFx={(effectId) => openTrackEffectEditor(selected, effectId)}
+                    onEditFx={(effectId, fxIndex) => openTrackEffectEditor(selected, effectId, fxIndex)}
+                    onEditRate={() => openTrackEffectEditor(selected, 'playbackRate')}
+                    onRemoveRate={() => onEffectApply(selected, 'playbackRate', { prRate: 1, prPreserve: false })}
                     onClose={() => setFxBarOpen(false)}
                 />
             )}
 
             {modal && modal.type === 'effect' && modalEffect && (
                 <EffectModal
-                    key={modal.trackId + ':' + modal.effectId}
+                    key={modal.trackId + ':' + modal.effectId + ':' + (modal.fxIndex ?? 'new')}
                     effect={modalEffect}
+                    initialParams={effectInitialParams(modal)}
                     onClose={() => setModal(null)}
-                    onApply={(params) => (modal.partial ? applyEffectToSelection(modal.trackId ?? null, modal.effectId, params) : onEffectApply(modal.trackId ?? null, modal.effectId, params))}
+                    onApply={(params) => (modal.partial ? applyEffectToSelection(modal.trackId ?? null, modal.effectId, params) : onEffectApply(modal.trackId ?? null, modal.effectId, params, modal.fxIndex ?? null))}
                     previewBuffer={previewBuffer}
                 />
             )}
@@ -1887,27 +2010,6 @@ function trackColor(i) {
 }
 
 /* Rebuild a default Tone node for an effect by name (used by undo restore). */
-function makeNodeFor(eff) {
-    try {
-        if (eff.id === 'gain') return new Tone.Gain(0);
-        if (eff.id === 'compressor') return new Tone.Compressor({ threshold: -24, knee: 30, ratio: 12, attack: 0.003, release: 0.25 });
-        if (eff.id === 'hardLimiter') return new Tone.Limiter(-0.3);
-        if (eff.id === 'delay') return new Tone.FeedbackDelay(0.35, 0.35);
-        if (eff.id === 'distortion') return new Tone.Distortion(0.4);
-        if (eff.id === 'reverb') {
-            const r = new Tone.Reverb({ decay: 3, wet: 0.25, preDelay: 0.02 });
-            return r;
-        }
-        if (eff.id === 'paragraphicEQ' || eff.id === 'graphicEQ' || eff.id === 'graphicEQ20') {
-            const built = buildEqNode([100, 500, 2000, 8000], [0, 0, 0, 0]);
-            return built && built.node ? built.node : built;
-        }
-        return new Tone.Gain(0);
-    } catch (e) {
-        return new Tone.Gain(0);
-    }
-}
-
 function downloadBlob(blob, name) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
