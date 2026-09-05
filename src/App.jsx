@@ -1056,14 +1056,18 @@ export default function App() {
         if (msg) flash(msg);
     };
 
-    const removeBaked = (trackId, i) => {
-        const t = tracks.find((x) => x.id === trackId);
-        if (!t) return;
-        applyBaked(
-            trackId,
-            (t.baked || []).filter((_, k) => k !== i),
-            'Efek dilepas',
-        );
+    const removeBaked = async (trackId, i) => {
+        try {
+            const t = tracks.find((x) => x.id === trackId);
+            if (!t) return;
+            await applyBaked(
+                trackId,
+                (t.baked || []).filter((_, k) => k !== i),
+                'Efek dilepas',
+            );
+        } catch (e) {
+            flash('Gagal melepas: ' + (e && e.message ? e.message : e));
+        }
     };
 
     const onEffectApply = async (trackId, effectId, params, fxIndex = null, bakedIndex = null) => {
@@ -1139,19 +1143,24 @@ export default function App() {
     };
 
     const removeFx = (trackId, index) => {
-        pushHistory(); // hapus efek harus bisa di-undo, sama seperti menambahnya
-        setTracks((prev) =>
-            prev.map((t) => {
-                if (t.id !== trackId) return t;
-                const chain = t.fxChain || [];
-                try {
-                    if (chain[index] && chain[index].node) chain[index].node.dispose();
-                } catch (e) {}
-                const nt = { ...t, fxChain: chain.filter((_, i) => i !== index) };
-                reconnect(nt);
-                return nt;
-            }),
-        );
+        pushHistory();
+        try {
+            setTracks((prev) =>
+                prev.map((t) => {
+                    if (t.id !== trackId) return t;
+                    const chain = t.fxChain || [];
+                    try {
+                        if (chain[index] && chain[index].node) chain[index].node.dispose();
+                    } catch (e) {}
+                    const nt = { ...t, fxChain: chain.filter((_, i) => i !== index) };
+                    reconnect(nt);
+                    return nt;
+                }),
+            );
+            flash('Efek dilepas');
+        } catch (e) {
+            flash('Gagal melepas: ' + (e && e.message ? e.message : e));
+        }
     };
 
     /* ---------- region selection (apply effect to part of a clip) ---------- */
