@@ -101,12 +101,17 @@ export function normalizeBuffer(b, target = 0.95) {
     return b;
 }
 export function fadeBuffer(b, which, ms = 300) {
-    const len = Math.floor((b.sampleRate * ms) / 1000);
+    const len = Math.min(Math.floor((b.sampleRate * ms) / 1000), b.length);
+    if (len <= 0) return b;
     for (let c = 0; c < b.numberOfChannels; c++) {
         const d = b.getChannelData(c);
-        for (let i = 0; i < len && i < d.length; i++) {
-            const t = which === 'in' ? i / len : 1 - i / len;
-            d[i] *= t;
+        if (which === 'in') {
+            for (let i = 0; i < len; i++) d[i] *= i / len;
+        } else {
+            /* Fade OUT harus meredam EKOR buffer. Versi lama memakai indeks 0..len
+               untuk kedua arah, jadi "Fade Out" sebenarnya memudarkan awal audio. */
+            const start = d.length - len;
+            for (let i = 0; i < len; i++) d[start + i] *= 1 - i / len;
         }
     }
     return b;

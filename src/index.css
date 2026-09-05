@@ -7,7 +7,9 @@
      Channel strip dan wave lane wajib memakai var ini supaya tidak pernah melenceng. */
   --head-h:26px; --lane-h:120px; --lane-h-compact:88px;
   --sbar-h:39px; /* tinggi baris scrollbar/zoom di bawah timeline */
-  --fxbar-h:104px; /* tinggi bottom fx rack — dipakai .app.fx-bar-open & .sel-bar.above-fx */
+  --fxbar-h:116px; /* tinggi bottom fx rack — dipakai .app.fx-bar-open & .sel-bar.above-fx.
+                      116 = head 34 + body (rack 52 + padding 2x14/2) — chip kini 2 baris
+                      (nama + keterangan parameter), jadi rack butuh 52px, bukan 40px. */
   --chrome-h:20px; /* margin .app: 10 atas + 10 bawah */
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -396,7 +398,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 /* rack: satu baris yang discroll horizontal. Tingginya DIPATOK (bukan min-height)
    supaya munculnya scrollbar horizontal tidak menambah tinggi .fx-bar — layout
    luar sudah bergantung pada var --fxbar-h. */
-.fx-rack{flex:1;min-width:0;display:flex;align-items:center;gap:8px;height:40px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.fx-rack{flex:1;min-width:0;display:flex;align-items:center;gap:8px;height:52px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
 .fx-rack::-webkit-scrollbar{height:6px}
 .fx-rack-empty{font-size:12px;color:var(--text-dim);font-style:italic}
 /* slot TIDAK boleh menyusut — kalau banyak efek, rack yang discroll horizontal
@@ -404,8 +406,13 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .fx-slot{flex-shrink:0;display:flex;align-items:center;gap:0;background:var(--bg-strip);border:1px solid var(--line);border-radius:8px;overflow:hidden;transition:border-color .15s ease}
 .fx-slot:hover{border-color:var(--teal-dim)}
 .fx-slot-idx{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--bg);background:var(--teal-dim);padding:0 6px;align-self:stretch;display:flex;align-items:center;font-weight:700}
-.fx-slot-name{font-size:12px;color:var(--text);padding:7px 10px;cursor:pointer;white-space:nowrap}
-.fx-slot-name:hover{color:var(--teal)}
+.fx-slot-main{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:5px 10px;cursor:pointer;min-width:0}
+.fx-slot-main:hover .fx-slot-name{color:var(--teal)}
+.fx-slot-name{font-size:12px;color:var(--text);white-space:nowrap;line-height:1.25}
+/* keterangan parameter/preset per chip — inilah yang bikin rack informatif tanpa
+   harus membuka modal. Mono supaya angka sejajar antar slot. */
+.fx-slot-note{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--text-dim);white-space:nowrap;line-height:1.2}
+.fx-slot-main:hover .fx-slot-note{color:var(--teal-dim)}
 .fx-slot-x{width:26px;align-self:stretch;border:none;border-left:1px solid var(--line);background:transparent;color:var(--text-dim);font-size:10px;cursor:pointer;transition:all .15s ease}
 .fx-slot-x:hover{background:rgba(242,102,94,.15);color:var(--coral)}
 .fx-bar-actions{display:flex;gap:8px;flex-shrink:0}

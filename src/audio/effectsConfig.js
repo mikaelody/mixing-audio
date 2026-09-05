@@ -192,6 +192,92 @@ export const EFFECTS = [
     },
 ];
 
+/* Efek yang MENGUBAH SAMPEL (buffer), bukan node realtime. Dipakai App untuk
+   memutuskan chip mana yang butuh snapshot buffer supaya bisa dilepas lagi. */
+export const BAKED_EFFECT_IDS = ['normalize', 'fadeIn', 'fadeOut', 'reverse', 'invert', 'removeSilence', 'noiseReduction', 'audioRepair'];
+
+/* Nama preset yang PERSIS cocok dengan params sekarang, atau '' kalau tidak ada.
+   Dipakai chip rack (keterangan) dan dropdown preset di modal (supaya saat
+   mengedit efek terpasang, dropdown menunjukkan preset yang sedang dipakai). */
+export function matchPreset(eff, params) {
+    if (!eff || !eff.presets) return '';
+    const p = params || {};
+    return (
+        Object.keys(eff.presets).find((k) =>
+            Object.entries(eff.presets[k]).every(([pk, pv]) => (typeof pv === 'number' ? Math.abs((p[pk] ?? NaN) - pv) < 1e-6 : p[pk] === pv)),
+        ) || ''
+    );
+}
+
+/* Sama untuk graphic EQ, tapi dicocokkan dari array band (bukan params). */
+export function matchEqPreset(eff, bands) {
+    if (!eff) return '';
+    const table = eff.custom === 'graphicEQ' ? EQ_PRESETS_10 : eff.custom === 'graphicEQ20' ? EQ_PRESETS_20 : null;
+    if (!table || !bands) return '';
+    return Object.keys(table).find((k) => table[k].length === bands.length && table[k].every((v, i) => Math.abs(v - (bands[i] || 0)) < 0.05)) || '';
+}
+
+/* Keterangan singkat untuk chip di fx rack. Satu aturan, semua efek:
+     - nilai persis sebuah preset → nama presetnya ("Rock", "Boost +6 dB")
+     - selain itu               → "Custom · <param utama>" ("Custom · 350 ms")
+     - tanpa parameter sama sekali (Reverse/Invert) → "Custom"
+   Nilai lengkap semua parameter ada di tooltip lewat fxDetail(). */
+export function fxSummary(eff, params) {
+    if (!eff) return 'Custom';
+    const p = params || {};
+    const num = (v) => String(Math.round(v * 100) / 100);
+
+    /* EQ tidak punya slider tunggal — preset ATAU 'Custom' adalah keterangannya. */
+    if (eff.custom === 'graphicEQ' || eff.custom === 'graphicEQ20') {
+        const gains = (eff.bands || []).map((_, i) => p['g' + i] || 0);
+        return matchEqPreset(eff, gains) || 'Custom';
+    }
+    if (eff.custom === 'paragraphic') {
+        const bands = [0, 1, 2, 3].filter((i) => Math.abs(p['peq' + i + 'Gain'] || 0) > 0.05);
+        return bands.length ? `Custom · ${bands.length} band aktif` : 'Custom · flat';
+    }
+
+    const parts = [];
+    const hit = matchPreset(eff, p);
+    /* Satu aturan untuk semua efek: kalau nilainya PERSIS sebuah preset → nama
+       presetnya; kalau tidak (termasuk efek yang tidak punya daftar preset) →
+       'Custom', lalu nilai parameter utamanya. */
+    parts.push(hit || 'Custom');
+
+    /* Parameter utama hanya perlu diulang kalau preset tidak menyebutkannya. */
+    if (!hit) {
+        const main = (eff.fields || []).find((f) => f.type === 'h');
+        if (main && p[main.id] !== undefined) parts.push(num(p[main.id]) + (main.unit || ''));
+    }
+    const tog = (eff.fields || []).find((f) => f.type === 'tg');
+    if (tog && p[tog.id]) parts.push(tog.label);
+    return parts.length ? parts.join(' · ') : 'Custom';
+}
+
+/* Semua parameter efek sebagai teks — dipakai untuk tooltip chip, supaya nilai
+   yang tidak muat di keterangan singkat tetap bisa dibaca tanpa membuka modal. */
+export function fxDetail(eff, params) {
+    if (!eff) return '';
+    const p = params || {};
+    const num = (v) => String(Math.round(v * 100) / 100);
+
+    if (eff.custom === 'graphicEQ' || eff.custom === 'graphicEQ20') {
+        return (eff.bands || []).map((b, i) => `${b}: ${num(p['g' + i] || 0)} dB`).join(' · ');
+    }
+    if (eff.custom === 'paragraphic') {
+        return [0, 1, 2, 3].map((i) => `B${i + 1} ${num(p['peq' + i + 'Freq'] ?? 100)}Hz ${num(p['peq' + i + 'Gain'] ?? 0)}dB Q${num(p['peq' + i + 'Q'] ?? 1)}`).join(' · ');
+    }
+    const out = [];
+    for (const f of eff.fields || []) {
+        if (f.type === 'act' || f.type === 'hro') continue;
+        const v = p[f.id];
+        if (v === undefined) continue;
+        if (f.type === 'tg') out.push(`${f.label}: ${v ? 'ya' : 'tidak'}`);
+        else out.push(`${f.label}: ${typeof v === 'number' ? num(v) + (f.unit || '') : v}`);
+    }
+    return out.join(' · ');
+}
+
 export const EFFECT_GROUPS = ['Dynamics', 'EQ & Filter', 'Time-based', 'Restoration', 'Pitch & Time', 'Utility'];
 
 export const EFFECTS_BY_ID = Object.fromEntries(EFFECTS.map((e) => [e.id, e]));

@@ -51,9 +51,20 @@ Dua mode berbeda, dan ini penting dipahami:
 
 Efek yang terpasang muncul sebagai chip di **fx rack** (bar bawah). Satu track bisa
 menampung berapa pun efek sekaligus — semuanya tampil berurutan sesuai rantai
-pemrosesan. Klik nama chip untuk mengedit parameternya (nilai yang tersimpan ikut
-terisi, dan Apply mengganti chip itu, bukan menambah duplikat), klik `✕` untuk
-melepasnya. Melepas efek bisa di-undo.
+pemrosesan, termasuk efek yang menulis langsung ke sampel (Fade, Normalize,
+Reverse, Remove Silence, …) dan Speed / Playback Rate.
+
+Tiap chip membawa keterangannya sendiri: nama preset kalau nilainya persis sebuah
+preset (`Rock`, `Boost +6 dB`), atau `Custom · <parameter utama>` kalau nilainya
+bebas (`Custom · 350 ms`, `2.00x · pitch asli`). Efek yang hanya berlaku pada
+region tertentu menyebut rentangnya (`Custom · -6 dB 0.99–1.99s`). Arahkan kursor
+ke chip untuk melihat semua parameternya.
+
+Klik nama chip untuk mengedit parameternya — nilai yang tersimpan ikut terisi,
+dropdown preset menunjuk preset yang sedang dipakai, dan Apply mengganti chip itu,
+bukan menambah duplikat. Klik `✕` untuk melepasnya. Efek yang menulis ke sampel
+disimpan sebagai resep dan diterapkan ulang dari buffer asli, jadi mengedit atau
+melepasnya tidak meninggalkan bekas. Semuanya bisa di-undo.
 
 ### Export
 `File → Export / Download`, pilih **WAV** (16-bit PCM), **MP3** (lamejs, bitrate
@@ -211,9 +222,11 @@ dari satu sumber, bukan angka ajaib yang tersebar.
 ## Catatan teknis
 
 - `wavesurfer.js` masih terdaftar di `package.json` tapi tidak dipakai — rendering waveform digambar sendiri di canvas. Aman untuk dihapus.
-- Undo menyimpan metadata track (volume, pan, efek + parameternya, playback rate, offset), bukan salinan buffer audio — 40 langkah tetap ringan di memori. Efek destruktif (fade, reverse, normalize, …) mengubah buffer, jadi undo untuk efek itu memulihkan metadata saja, bukan sampelnya.
+- Undo menyimpan metadata track (volume, pan, efek + parameternya, playback rate, offset) plus daftar resep efek destruktif — bukan salinan buffer audio, jadi 40 langkah tetap ringan di memori.
+- Efek yang menulis ke sampel (fade, reverse, normalize, remove silence, …) disimpan sebagai resep `{id, params, region}` di samping buffer asli (`origBuf`). Mengedit atau melepas satu resep me-render ulang seluruh rantai dari buffer asli, jadi tidak ada residu — dan itulah yang membuat chip-nya bisa dihapus sungguhan, bukan hanya hilang dari daftar.
 - Draft dan undo menyimpan `id` + parameter tiap efek, jadi node dibangun ulang dengan nilai yang sama — bukan default.
-- Speed / Playback Rate bukan node di rantai efek (ia properti player), tapi tetap tampil sebagai slot bertanda `R` di fx bar supaya bisa diedit atau dilepas seperti efek lain.
+- Speed / Playback Rate bukan node di rantai efek (ia properti player), tapi tetap tampil sebagai slot bertanda `R` di fx bar supaya bisa diedit atau dilepas seperti efek lain. Karena ia mengubah lama klip berbunyi, lebar waveform di lane, `maxDur`, dan durasi hasil export semuanya dihitung dari `durasi buffer ÷ rate`.
+- Keterangan chip dihitung di satu tempat (`fxSummary` di `effectsConfig.js`) dari `{id, params}` yang sama yang dipakai untuk membangun node — jadi keterangan tidak bisa berbeda dari audio yang berbunyi.
 
 ---
 

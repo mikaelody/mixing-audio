@@ -70,7 +70,12 @@ export default function TrackLane({ t, width, pxPerSec=80, waveColors=true,
   const dragMovedRef = useRef(false)
 
   const offPx = (t.offset||0) * pxPerSec
-  const durPx = t.buf ? t.buf.duration * pxPerSec : 0
+  /* Sumbu timeline adalah DETIK TRANSPORT, dan playbackRate memang mengubah
+     berapa lama klip berbunyi — jadi lebar lane harus dibagi rate. Tanpa ini
+     Speed 2x tetap menggambar waveform sepanjang aslinya walau audionya
+     selesai di separuh waktu, dan playhead lari mendahului gelombangnya. */
+  const rate = t.playbackRate || 1
+  const durPx = t.buf ? (t.buf.duration / rate) * pxPerSec : 0
 
   useEffect(()=>{
     if(!t.buf || !canvasRef.current) return
@@ -97,7 +102,10 @@ export default function TrackLane({ t, width, pxPerSec=80, waveColors=true,
     const rect = wrapRef.current.getBoundingClientRect()
     const x = e.clientX - rect.left
     const currentOffPx = (t.offset||0) * pxPerSec
-    const durPx = t.buf.duration * pxPerSec
+    /* durasi TERDENGAR (buffer/rate) untuk hit-test lane, dan `duration` tetap
+       detik BUFFER karena seleksi dipakai untuk memotong sampel — px→buffer
+       detik karena itu harus dikali rate. */
+    const durPx = (t.buf.duration / rate) * pxPerSec
     const duration = t.buf.duration || 0
 
     /* Shift+drag = selection mode (overrides clip move) */
@@ -105,7 +113,7 @@ export default function TrackLane({ t, width, pxPerSec=80, waveColors=true,
       e.preventDefault()
       e.stopPropagation()
       setDraggingSel(true)
-      const anchorSec = Math.max(0, Math.min(duration, (x - currentOffPx) / pxPerSec))
+      const anchorSec = Math.max(0, Math.min(duration, ((x - currentOffPx) / pxPerSec) * rate))
       if(onSelectionChange) onSelectionChange(t.id, anchorSec, anchorSec)
 
       const onMove = (moveEv)=>{
@@ -113,7 +121,7 @@ export default function TrackLane({ t, width, pxPerSec=80, waveColors=true,
         const r = wrapRef.current.getBoundingClientRect()
         const curX = moveEv.clientX - r.left
         const curOff = (t.offset||0) * pxPerSec
-        const curLocal = Math.max(0, Math.min(duration, (curX - curOff) / pxPerSec))
+        const curLocal = Math.max(0, Math.min(duration, ((curX - curOff) / pxPerSec) * rate))
         const s = Math.min(anchorSec, curLocal)
         const e2 = Math.max(anchorSec, curLocal)
         if(onSelectionChange) onSelectionChange(t.id, s, e2)
@@ -184,14 +192,14 @@ export default function TrackLane({ t, width, pxPerSec=80, waveColors=true,
             {/* selection region overlay */}
             {hasSelection && isSelTrack && (
               <div className="sel-region" style={{
-                left: Math.max(0, selStart * pxPerSec),
-                width: Math.max(0, (selEnd - selStart) * pxPerSec),
+                left: Math.max(0, (selStart / rate) * pxPerSec),
+                width: Math.max(0, ((selEnd - selStart) / rate) * pxPerSec),
                 height: '100%'
               }} />
             )}
             <div className="clip-label">{t.name}</div>
             <div className="clip-dur" style={{display:hover||dragging||draggingSel?'flex':'none'}}>
-              {(t.buf.duration).toFixed(2)}s
+              {(t.buf.duration / rate).toFixed(2)}s{rate !== 1 ? ` @${rate.toFixed(2)}x` : ''}
             </div>
             <div className="clip-drag-handle" title="Drag untuk memindahkan clip">⠿</div>
           </div>

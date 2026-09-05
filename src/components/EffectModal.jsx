@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Tone from 'tone';
-import { EFFECTS_BY_ID, EQ_PRESETS_10, EQ_PRESETS_20 } from '../audio/effectsConfig';
+import { EFFECTS_BY_ID, EQ_PRESETS_10, EQ_PRESETS_20, matchPreset, matchEqPreset } from '../audio/effectsConfig';
 import HSlider from './controls/HSlider';
 import ToggleSwitch from './controls/ToggleSwitch';
 import FieldSelect from './controls/FieldSelect';
@@ -124,12 +124,15 @@ export default function EffectModal({ effect, onApply, onClose, previewBuffer, i
                         <span>Presets</span>
                         <select
                             className="preset-select"
+                            /* Controlled: saat mengedit efek terpasang, dropdown menunjukkan preset
+                               yang sedang dipakai; begitu slider digeser ia jatuh ke "Custom". */
+                            value={matchPreset(eff, params)}
                             onChange={(e) => {
                                 const pr = eff.presets[e.target.value];
                                 if (pr) setParams((prev) => ({ ...prev, ...pr }));
                             }}
                         >
-                            <option value="">Default</option>
+                            <option value="">Custom</option>
                             {Object.keys(eff.presets).map((k) => (
                                 <option key={k} value={k}>
                                     {k}
@@ -143,7 +146,7 @@ export default function EffectModal({ effect, onApply, onClose, previewBuffer, i
                         <span>EQ Presets</span>
                         <select
                             className="preset-select"
-                            defaultValue=""
+                            value={matchEqPreset(eff, eqBands)}
                             onChange={(e) => {
                                 const name = e.target.value;
                                 const table = eff.custom === 'graphicEQ' ? EQ_PRESETS_10 : EQ_PRESETS_20;

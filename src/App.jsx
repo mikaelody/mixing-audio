@@ -10,13 +10,18 @@ import Modal from './components/Modal.jsx';
 import SelectionBar from './components/SelectionBar.jsx';
 import BottomFxBar from './components/BottomFxBar.jsx';
 import { processEffect, destructiveBuffer } from './audio/applyEffect.js';
-import { EFFECTS } from './audio/effectsConfig.js';
+import { EFFECTS, BAKED_EFFECT_IDS } from './audio/effectsConfig.js';
 import { makeSampleBuffer, audioBufferToWav, cloneBuffer, extractBufferRegion, replaceBufferRegion, logBands } from './audio/dsp.js';
 import { encodeBuffer } from './audio/exportEncoders.js';
 import { draftPut, draftAll, draftDel } from './audio/draftStore.js';
 
 let uid = 0;
 const nextId = () => ++uid;
+
+/* Panjang klip di TIMELINE (detik transport). playbackRate mengubah berapa lama
+   buffer berbunyi, jadi setiap perhitungan lebar/fit/scroll harus lewat sini —
+   bukan t.buf.duration mentah. */
+const laneDur = (t) => (t && t.buf ? t.buf.duration / (t.playbackRate || 1) : 0);
 
 /* fxChain <-> snapshot. Node Tone tidak bisa diserialisasi, tapi id + params
    bisa — dan itu cukup untuk membangun ulang node yang IDENTIK. Menyimpan
@@ -114,7 +119,7 @@ export default function App() {
 
     /* horizontal timeline scroll: shared scrollbar below the track audio */
     const channelW = compact ? 196 : 280;
-    const maxDur = tracks.reduce((m, t) => Math.max(m, (t.buf ? t.buf.duration : 0) + (t.offset || 0)), 0);
+    const maxDur = tracks.reduce((m, t) => Math.max(m, laneDur(t) + (t.offset || 0)), 0);
     const viewW0 = viewW || 0;
     /* timeline width = at least the viewport, plus room for the longest clip,
      plus a minimum overscan so the horizontal scrollbar is always usable */
@@ -160,24 +165,30 @@ export default function App() {
     }, []);
 
     /* ---------- history (undo/redo) ---------- */
-    const pushHistory = useCallback(() => {
-        histRef.current.push(
-            JSON.stringify(
-                tracks.map((t) => ({
-                    id: t.id,
-                    name: t.name,
-                    volumeDb: t.volumeDb,
-                    pan: t.pan,
-                    mute: t.mute,
-                    solo: t.solo,
-                    color: t.color,
-                    fx: serializeFx(t), // id + params: node dibangun ulang identik
-                    playbackRate: t.playbackRate || 1,
-                    pitchComp: t.pitchComp || 0,
-                    offset: t.offset || 0,
-                })),
-            ),
+    /* SATU bentuk snapshot untuk push/undo/redo. Sebelumnya bentuknya ditulis
+       tiga kali dan gampang tidak sinkron — `baked` (resep efek destruktif)
+       harus ada di ketiganya, kalau tidak undo mengembalikan daftar chip tapi
+       tidak mengembalikan sampelnya. */
+    const snapTracks = (list) =>
+        JSON.stringify(
+            list.map((t) => ({
+                id: t.id,
+                name: t.name,
+                volumeDb: t.volumeDb,
+                pan: t.pan,
+                mute: t.mute,
+                solo: t.solo,
+                color: t.color,
+                fx: serializeFx(t), // id + params: node dibangun ulang identik
+                baked: (t.baked || []).map((r) => ({ id: r.id, params: r.params || {}, region: r.region || null })),
+                playbackRate: t.playbackRate || 1,
+                pitchComp: t.pitchComp || 0,
+                offset: t.offset || 0,
+            })),
         );
+
+    const pushHistory = useCallback(() => {
+        histRef.current.push(snapTracks(tracks));
         if (histRef.current.length > 40) histRef.current.shift();
         redoRef.current = [];
         setHistory([...histRef.current]);
@@ -187,7 +198,7 @@ export default function App() {
         if (!histRef.current.length) return flash('Tidak ada history');
         const prev = histRef.current.pop();
         setHistory([...histRef.current]);
-        redoRef.current.push(JSON.stringify(tracks.map((t) => ({ id: t.id, name: t.name, volumeDb: t.volumeDb, pan: t.pan, mute: t.mute, solo: t.solo, color: t.color, fx: serializeFx(t), playbackRate: t.playbackRate || 1, pitchComp: t.pitchComp || 0, offset: t.offset || 0 }))));
+        redoRef.current.push(snapTracks(tracks));
         setRedoStack([...redoRef.current]);
         restoreFromJson(prev);
         flash('Undo');
@@ -197,7 +208,7 @@ export default function App() {
         if (!redoRef.current.length) return flash('Tidak ada redo');
         const next = redoRef.current.pop();
         setRedoStack([...redoRef.current]);
-        histRef.current.push(JSON.stringify(tracks.map((t) => ({ id: t.id, name: t.name, volumeDb: t.volumeDb, pan: t.pan, mute: t.mute, solo: t.solo, color: t.color, fx: serializeFx(t), playbackRate: t.playbackRate || 1, pitchComp: t.pitchComp || 0, offset: t.offset || 0 }))));
+        histRef.current.push(snapTracks(tracks));
         setHistory([...histRef.current]);
         restoreFromJson(next);
         flash('Redo');
@@ -217,6 +228,26 @@ export default function App() {
                 if (!old) continue;
                 const nt = { ...old, name: s.name, volumeDb: s.volumeDb, pan: s.pan, mute: s.mute, solo: s.solo, color: s.color, offset: s.offset || 0, playbackRate: s.playbackRate || 1, pitchComp: s.pitchComp || 0, fxChain: [] };
                 nt.fxChain = await rebuildFxChain(s.fx);
+                /* Efek destruktif ada di SAMPEL, bukan di node — jadi undo/redo harus
+                   me-render ulang buffer dari origBuf mengikuti daftar resep snapshot.
+                   Tanpa ini chip-nya hilang dari rack tapi audionya tetap ter-edit. */
+                const recipes = Array.isArray(s.baked) ? s.baked.map((r) => ({ ...r, region: r.region || undefined })) : [];
+                const prevKey = JSON.stringify((old.baked || []).map((r) => ({ id: r.id, params: r.params || {}, region: r.region || null })));
+                const nextKey = JSON.stringify(recipes.map((r) => ({ id: r.id, params: r.params || {}, region: r.region || null })));
+                nt.baked = recipes;
+                if (prevKey !== nextKey && (old.origBuf || old.buf)) {
+                    const nb = await rebake(old, recipes);
+                    if (nb) {
+                        if (nt.player) {
+                            try {
+                                nt.player.dispose();
+                            } catch (e) {}
+                        }
+                        nt.origBuf = old.origBuf || old.buf;
+                        nt.buf = nb;
+                        nt.player = new Tone.Player({ url: nb, loop: false });
+                    }
+                }
                 reconnect(nt);
                 newTracks.push(nt);
             }
@@ -299,7 +330,7 @@ export default function App() {
             const buf = await makeBuffer(arrayBuf);
             await makeTrack(file.name, buf);
             /* tampilkan seluruh waveform dulu (fit-to-width); user zoom sendiri kalau mau edit */
-            const dur = Math.max(buf.duration, ...tracks.map((t) => (t.buf ? t.buf.duration + (t.offset || 0) : 0)), 0);
+            const dur = Math.max(buf.duration, ...tracks.map((t) => laneDur(t) + (t.offset || 0)), 0);
             fitToWidth(dur);
         } catch (e) {
             flash('Gagal memuat audio: ' + (e && e.message ? e.message : e));
@@ -310,7 +341,7 @@ export default function App() {
         try {
             const buf = await makeSampleBuffer();
             await makeTrack('Sample (Tone Chord)', buf);
-            const dur = Math.max(buf.duration, ...tracks.map((t) => (t.buf ? t.buf.duration + (t.offset || 0) : 0)), 0);
+            const dur = Math.max(buf.duration, ...tracks.map((t) => laneDur(t) + (t.offset || 0)), 0);
             fitToWidth(dur);
         } catch (e) {
             flash('Gagal memuat sample: ' + (e && e.message ? e.message : e));
@@ -450,7 +481,7 @@ export default function App() {
             const el = scrollRef.current;
             if (!t || !el) return;
             const left = (t.offset || 0) * pxPerSec;
-            const w = t.buf ? t.buf.duration * pxPerSec : 0;
+            const w = laneDur(t) * pxPerSec;
             const view = el.clientWidth;
             const max = scrollMaxRef.current;
             let target = left - view / 2 + w / 2;
@@ -469,7 +500,7 @@ export default function App() {
             const arrayBuf = await res.arrayBuffer();
             const buf = await makeBuffer(arrayBuf);
             await makeTrack(url.split('/').pop().split('?')[0] || 'URL Audio', buf);
-            const dur = Math.max(buf.duration, ...tracks.map((t) => (t.buf ? t.buf.duration + (t.offset || 0) : 0)), 0);
+            const dur = Math.max(buf.duration, ...tracks.map((t) => laneDur(t) + (t.offset || 0)), 0);
             fitToWidth(dur);
         } catch (e) {
             flash('Gagal memuat URL: ' + (e && e.message ? e.message : e));
@@ -529,15 +560,15 @@ export default function App() {
                     solo: t.solo,
                     color: t.color,
                     offset: t.offset || 0,
-                    /* ponytail: hanya NAMA efek yang disimpan, jadi draft memulihkan
-                       efek dengan parameter DEFAULT — bukan nilai yang di-tweak user.
-                       Serialisasi param per-node kalau itu mulai mengganggu. */
-                    fx: serializeFx(t),
+                    fx: serializeFx(t), // id + params → node dibangun ulang identik
+                    /* resep efek destruktif; audio yang disimpan adalah buffer ASLI,
+                       jadi chip-nya masih bisa dilepas setelah draft dimuat. */
+                    baked: (t.baked || []).map((r) => ({ id: r.id, params: r.params || {}, region: r.region || null })),
                     playbackRate: t.playbackRate || 1,
                     pitchComp: t.pitchComp || 0,
                     /* Blob, bukan blob-URL: URL.createObjectURL mati begitu tab
                        ditutup, jadi draft lama selalu kehilangan audionya. */
-                    wav: t.buf ? audioBufferToWav(t.buf) : null,
+                    wav: t.origBuf || t.buf ? audioBufferToWav(t.origBuf || t.buf) : null,
                 })),
             };
             await draftPut(key, draft);
@@ -570,7 +601,11 @@ export default function App() {
             const built = [];
             for (let i = 0; i < d.tracks.length; i++) {
                 const s = d.tracks[i];
-                const buf = s.wav ? await makeBuffer(await s.wav.arrayBuffer()) : null;
+                const orig = s.wav ? await makeBuffer(await s.wav.arrayBuffer()) : null;
+                /* WAV draft = buffer ASLI. Efek destruktif diterapkan ulang dari
+                   resep supaya hasil audionya sama DAN chip-nya masih bisa dilepas. */
+                const recipes = Array.isArray(s.baked) ? s.baked.map((r) => ({ ...r, region: r.region || undefined })) : [];
+                const buf = orig && recipes.length ? await rebake({ origBuf: orig }, recipes) : orig;
                 const player = buf ? new Tone.Player({ url: buf, loop: false }) : new Tone.Player();
                 const panner = makePanner(s.pan || 0);
                 const meter = new Tone.Meter({ normalRange: false });
@@ -581,6 +616,8 @@ export default function App() {
                     id: nextId(),
                     name: s.name,
                     buf,
+                    origBuf: orig || undefined,
+                    baked: recipes,
                     player,
                     panner,
                     meter,
@@ -613,7 +650,7 @@ export default function App() {
                 } catch (e) {}
             }
             setModal(null);
-            const dur = Math.max(0, ...built.map((t) => (t.buf ? t.buf.duration + (t.offset || 0) : 0)));
+            const dur = Math.max(0, ...built.map((t) => laneDur(t) + (t.offset || 0)));
             if (dur > 0) fitToWidth(dur);
             flash(`Draft dimuat — ${built.length} track`);
         } catch (e) {
@@ -806,7 +843,7 @@ export default function App() {
                 for (const t of tracks) {
                     if (!t.player || !t.buf) continue;
                     const off = t.offset || 0;
-                    const dur = t.buf.duration || 0;
+                    const dur = laneDur(t);
                     t.player.loop = !!loop;
                     t.player.unsync();
                     t.player.sync();
@@ -869,7 +906,7 @@ export default function App() {
             if (!tracks.length) return flash('Tidak ada track untuk diekspor');
             /* rate > 1 memendekkan klip, jadi durasi render ikut dibagi rate —
                kalau tidak, ekspor kepanjangan (atau terpotong saat rate < 1). */
-            const dur = Math.max(...tracks.map((t) => (t.buf ? t.buf.duration / (t.playbackRate || 1) + (t.offset || 0) : 0)), 1);
+            const dur = Math.max(...tracks.map((t) => laneDur(t) + (t.offset || 0)), 1);
             const sr = 44100;
             const numCh = _cfg.channels === 1 ? 1 : 2;
             /* Tone.Offline, bukan OfflineAudioContext mentah: node Tone terikat pada
@@ -918,7 +955,73 @@ export default function App() {
     const openExport = () => setModal({ type: 'export' });
 
     /* ---------- effects ---------- */
-    const onEffectApply = async (trackId, effectId, params, fxIndex = null) => {
+    /* Semua edit yang MENULIS KE SAMPEL dicatat sebagai resep {id, params, region?}
+       dan diterapkan ulang dari origBuf. Satu buffer asli + daftar resep jauh lebih
+       murah daripada snapshot buffer per efek (~63 MB per 3 menit stereo), dan
+       membuat hapus/edit di tengah tumpukan jadi benar dengan sendirinya.
+       ponytail: region dicatat dalam detik relatif buffer saat itu — resep yang
+       mengubah panjang (Remove Silence) menggeser region resep sesudahnya. Simpan
+       region sebagai fraksi kalau itu mulai mengganggu. */
+    const rebake = async (t, recipes) => {
+        let buf = t.origBuf || t.buf;
+        for (const r of recipes) {
+            const eff = EFFECTS.find((e) => e.id === r.id);
+            if (!eff || !buf) continue;
+            if (r.region) {
+                const s = Math.max(0, r.region[0]);
+                const e2 = Math.min(buf.duration, r.region[1]);
+                if (e2 - s < 0.01) continue;
+                const slice = extractBufferRegion(buf, s, e2);
+                if (!slice) continue;
+                const res = await processEffect(eff, r.params || {});
+                /* fx realtime di-bake offline ke region; efek destruktif jalan langsung */
+                const done = res && res.fx ? await renderRegionFx(slice, eff, r.params || {}) : await destructiveBuffer(eff, slice, r.params || {});
+                if (done) buf = replaceBufferRegion(buf, s, e2, done);
+            } else {
+                const nb = await destructiveBuffer(eff, buf, r.params || {});
+                if (nb) buf = nb;
+            }
+        }
+        return buf;
+    };
+
+    /* Satu jalur untuk seluruh daftar resep: render ulang buffer, bangun Player
+       baru, simpan origBuf sekali. Dipakai saat menambah, mengedit, dan menghapus
+       efek destruktif — jadi ketiganya tidak bisa saling menyimpang. */
+    const applyBaked = async (trackId, recipes, msg) => {
+        const t = tracks.find((x) => x.id === trackId);
+        if (!t || !(t.origBuf || t.buf)) return flash('Pilih track dengan audio dulu');
+        const orig = t.origBuf || t.buf;
+        const nb = await rebake(t, recipes);
+        if (!nb) return flash('Tidak ada audio untuk diproses');
+        if (t.player) {
+            try {
+                t.player.dispose();
+            } catch (e) {}
+        }
+        const player = new Tone.Player({ url: nb, loop: false });
+        /* fxChain DIPERTAHANKAN: node Tone hidup terpisah dari Player, jadi
+           edit destruktif cuma perlu disambung ulang. */
+        const nt = { ...t, buf: nb, origBuf: orig, baked: recipes, player };
+        reconnect(nt);
+        pushHistory();
+        setTracks((prev) => prev.map((x) => (x.id === trackId ? nt : x)));
+        setSelected(trackId);
+        setFxBarOpen(true);
+        if (msg) flash(msg);
+    };
+
+    const removeBaked = (trackId, i) => {
+        const t = tracks.find((x) => x.id === trackId);
+        if (!t) return;
+        applyBaked(
+            trackId,
+            (t.baked || []).filter((_, k) => k !== i),
+            'Efek dilepas',
+        );
+    };
+
+    const onEffectApply = async (trackId, effectId, params, fxIndex = null, bakedIndex = null) => {
         const eff = EFFECTS.find((e) => e.id === effectId);
         if (!eff) return flash('Efek tidak dikenal');
         const t = tracks.find((x) => x.id === trackId);
@@ -926,22 +1029,19 @@ export default function App() {
         try {
             const res = await processEffect(eff, params);
             if (res && res.buffer) {
-                /* destructive: rebuild buffer + player */
-                const nb = await destructiveBuffer(eff, t.buf, params || {});
-                if (!nb || nb === t.buf) return flash('Tidak ada audio untuk diproses');
-                if (t.player) {
-                    try {
-                        t.player.dispose();
-                    } catch (e) {}
-                }
-                const player = new Tone.Player({ url: nb, loop: false }).toDestination();
-                /* fxChain DIPERTAHANKAN: node Tone hidup terpisah dari Player, jadi
-                   edit destruktif cuma perlu disambung ulang. Mengosongkannya bikin
-                   semua efek yang sudah dipasang user hilang tanpa peringatan. */
-                const nt = { ...t, buf: nb, player };
-                reconnect(nt);
-                pushHistory();
-                setTracks((prev) => prev.map((x) => (x.id === trackId ? nt : x)));
+                /* destructive: catat sebagai resep, lalu render ulang dari origBuf.
+                   bakedIndex != null berarti user mengedit chip yang sudah ada —
+                   ganti resepnya di tempat, bukan menumpuk efek kedua. */
+                const recipes = [...(t.baked || [])];
+                const entry = { id: effectId, params: params || {} };
+                if (bakedIndex != null && recipes[bakedIndex]) {
+                    /* region ikut dipertahankan — mengedit parameter tidak boleh
+                       mengubah efek region jadi efek seluruh track. */
+                    if (recipes[bakedIndex].region) entry.region = recipes[bakedIndex].region;
+                    recipes[bakedIndex] = entry;
+                } else recipes.push(entry);
+                await applyBaked(trackId, recipes, 'Efek diterapkan');
+                return;
             } else if (res && res.fx) {
                 /* non-destructive: fxIndex != null berarti user mengedit efek yang
                    SUDAH ada (klik chip) — ganti di tempat, jangan tumpuk duplikat. */
@@ -979,6 +1079,11 @@ export default function App() {
                 reconnect(nt);
                 pushHistory();
                 setTracks((prev) => prev.map((x) => (x.id === trackId ? nt : x)));
+                /* Rack harus terbuka & track terfokus, sama seperti jalur efek lain —
+                   kalau tidak, slot Speed cuma ada di state dan tidak pernah terlihat
+                   saat efeknya dipasang dari menu topbar. */
+                setSelected(trackId);
+                setFxBarOpen(true);
                 flash(`Playback rate ${res.playbackRate}x` + (res.pitchComp ? ' (pitch dipertahankan)' : ''));
                 return;
             }
@@ -1041,6 +1146,12 @@ export default function App() {
         if (trackId == null || !effectId) return;
         setModal({ type: 'effect', trackId, effectId, fxIndex });
     };
+    /* Sama untuk efek destruktif: bakedIndex dibawa supaya Apply MENGGANTI resep
+       itu (audio dirender ulang dari origBuf), bukan menumpuk efek kedua. */
+    const openBakedEffectEditor = (trackId, effectId, bakedIndex) => {
+        if (trackId == null || !effectId) return;
+        setModal({ type: 'effect', trackId, effectId, bakedIndex });
+    };
 
     /* Nilai awal modal saat MENGEDIT efek terpasang. Dua sumber: slot fxChain
        (punya params) dan playbackRate yang hidup di objek track, bukan di chain. */
@@ -1049,6 +1160,7 @@ export default function App() {
         const t = tracks.find((x) => x.id === m.trackId);
         if (!t) return undefined;
         if (m.fxIndex != null) return ((t.fxChain || [])[m.fxIndex] || {}).params;
+        if (m.bakedIndex != null) return ((t.baked || [])[m.bakedIndex] || {}).params;
         if (m.effectId === 'playbackRate' && Math.abs((t.playbackRate || 1) - 1) > 1e-6) {
             return { prRate: t.playbackRate, prPreserve: !!t.pitchComp };
         }
@@ -1074,43 +1186,17 @@ export default function App() {
             end = Math.min(t.buf.duration, selEnd);
         if (end - start < 0.01) return flash('Seleksi terlalu pendek');
         try {
-            let nb;
             if (eff.id === 'speedPitch' || eff.id === 'playbackRate') {
                 /* Kecepatan adalah properti player, bukan sampel — tidak ada artinya
                    per-region. Alihkan ke jalur seluruh track daripada menolak. */
                 return onEffectApply(trackId, effectId, params);
             }
-            const slice = extractBufferRegion(t.buf, start, end);
-            if (!slice) return flash('Seleksi kosong');
             const res = await processEffect(eff, params || {});
-            if (res && res.buffer) {
-                /* destructive: process the slice only */
-                const processed = await destructiveBuffer(eff, slice, params || {});
-                if (!processed || processed === slice) return flash('Tidak ada audio untuk diproses');
-                nb = replaceBufferRegion(t.buf, start, end, processed);
-            } else if (res && res.fx) {
-                /* non-destructive: render the node onto the slice, splice back */
-                const baked = await renderRegionFx(slice, eff, params || {});
-                nb = replaceBufferRegion(t.buf, start, end, baked);
-            } else {
-                flash('Efek tidak bisa diterapkan ke seleksi');
-                return;
-            }
-            if (!nb || nb === t.buf) return flash('Tidak ada audio untuk diproses');
-            if (t.player) {
-                try {
-                    t.player.dispose();
-                } catch (e) {}
-            }
-            const player = new Tone.Player({ url: nb, loop: false }).toDestination();
-            /* fxChain dipertahankan — efek realtime yang sudah dipasang user tidak
-               ada urusannya dengan region yang baru saja di-bake. */
-            const nt = { ...t, buf: nb, player };
-            reconnect(nt);
-            pushHistory();
-            setTracks((prev) => prev.map((x) => (x.id === trackId ? nt : x)));
+            if (!res || (!res.buffer && !res.fx)) return flash('Efek tidak bisa diterapkan ke seleksi');
+            /* Resep region, sama seperti efek destruktif seluruh track — chip-nya
+               muncul di rack dan bisa dilepas lagi. */
+            await applyBaked(trackId, [...(t.baked || []), { id: effectId, params: params || {}, region: [start, end] }], `Efek diterapkan ke seleksi (${(end - start).toFixed(2)}s)`);
             clearSelection();
-            flash(`Efek diterapkan ke seleksi (${(end - start).toFixed(2)}s)`);
         } catch (e) {
             flash('Efek seleksi gagal: ' + (e && e.message ? e.message : e));
         }
@@ -1413,7 +1499,7 @@ export default function App() {
             const nv = !v;
             Tone.Transport.loop = nv;
             if (nv) {
-                const dur = tracks.reduce((m, t) => Math.max(m, (t.buf ? t.buf.duration : 0) + (t.offset || 0)), 0);
+                const dur = tracks.reduce((m, t) => Math.max(m, laneDur(t) + (t.offset || 0)), 0);
                 if (dur > 0) Tone.Transport.loopEnd = dur;
             }
             return nv;
@@ -1599,7 +1685,22 @@ export default function App() {
                     return -1;
                 }
             },
-            getState: () => tracks.map((t) => ({ id: t.id, name: t.name, fx: (t.fxChain || []).map((f) => f.type), hasBuf: !!t.buf, offset: t.offset || 0, dur: t.buf ? t.buf.duration : 0 })),
+            getState: () =>
+                tracks.map((t) => ({
+                    id: t.id,
+                    name: t.name,
+                    fx: (t.fxChain || []).map((f) => f.type),
+                    /* resep destruktif + rate: dipakai audit browser untuk membuktikan
+                       chip rack = state sebenarnya, dan lane memendek sesuai rate. */
+                    baked: (t.baked || []).map((r) => ({ id: r.id, params: r.params || {}, region: r.region || null })),
+                    playbackRate: t.playbackRate || 1,
+                    pitchComp: t.pitchComp || 0,
+                    hasBuf: !!t.buf,
+                    offset: t.offset || 0,
+                    dur: t.buf ? t.buf.duration : 0,
+                    origDur: t.origBuf ? t.origBuf.duration : t.buf ? t.buf.duration : 0,
+                    laneDur: laneDur(t),
+                })),
             /* seleksi region — dipakai audit browser untuk mengukur RMS in/out region */
             selStart,
             selEnd,
@@ -1613,7 +1714,10 @@ export default function App() {
      bersamaan — selection bar naik ke atas rack. */
     const hasSel = selStart != null && selEnd != null && selEnd > selStart;
     const rackOpen = fxBarOpen && selected != null;
-    const reserveBottom = (rackOpen ? 104 : 0) + (hasSel ? (rackOpen ? 54 : 48) : 0);
+    /* Angka ini HARUS sama dengan --fxbar-h di index.css (116px: chip fx rack kini
+       dua baris — nama + keterangan parameter). Kalau salah satu berubah tanpa yang
+       lain, statusbar ketutup atau ada celah kosong di bawah. */
+    const reserveBottom = (rackOpen ? 116 : 0) + (hasSel ? (rackOpen ? 54 : 48) : 0);
 
     /* --reserve-bottom = ruang bar mengapung di bawah (fx rack + selection bar).
      .app dipendekkan sebanyak ini supaya statusbar tidak pernah tertutup. */
@@ -1857,6 +1961,8 @@ export default function App() {
                     onAddToSelection={openSelectionEffectPicker}
                     onRemoveFx={(i) => removeFx(selected, i)}
                     onEditFx={(effectId, fxIndex) => openTrackEffectEditor(selected, effectId, fxIndex)}
+                    onEditBaked={(effectId, bakedIndex) => openBakedEffectEditor(selected, effectId, bakedIndex)}
+                    onRemoveBaked={(i) => removeBaked(selected, i)}
                     onEditRate={() => openTrackEffectEditor(selected, 'playbackRate')}
                     onRemoveRate={() => onEffectApply(selected, 'playbackRate', { prRate: 1, prPreserve: false })}
                     onClose={() => setFxBarOpen(false)}
@@ -1865,11 +1971,11 @@ export default function App() {
 
             {modal && modal.type === 'effect' && modalEffect && (
                 <EffectModal
-                    key={modal.trackId + ':' + modal.effectId + ':' + (modal.fxIndex ?? 'new')}
+                    key={modal.trackId + ':' + modal.effectId + ':' + (modal.fxIndex ?? 'n') + ':' + (modal.bakedIndex ?? 'n')}
                     effect={modalEffect}
                     initialParams={effectInitialParams(modal)}
                     onClose={() => setModal(null)}
-                    onApply={(params) => (modal.partial ? applyEffectToSelection(modal.trackId ?? null, modal.effectId, params) : onEffectApply(modal.trackId ?? null, modal.effectId, params, modal.fxIndex ?? null))}
+                    onApply={(params) => (modal.partial ? applyEffectToSelection(modal.trackId ?? null, modal.effectId, params) : onEffectApply(modal.trackId ?? null, modal.effectId, params, modal.fxIndex ?? null, modal.bakedIndex ?? null))}
                     previewBuffer={previewBuffer}
                 />
             )}
@@ -1887,7 +1993,7 @@ export default function App() {
                     aboveFx={fxBarOpen && selected != null && tracks.some((t) => t.id === selected)}
                 />
             )}
-            {modal && modal.type === 'export' && <ExportModal trackCount={tracks.length} duration={Math.max(...tracks.map((t) => (t.buf ? t.buf.duration + (t.offset || 0) : 0)), 0)} onClose={() => setModal(null)} onExport={exportMix} />}
+            {modal && modal.type === 'export' && <ExportModal trackCount={tracks.length} duration={Math.max(...tracks.map((t) => laneDur(t) + (t.offset || 0)), 0)} onClose={() => setModal(null)} onExport={exportMix} />}
             {modal && modal.type === 'help' && (
                 <Modal title="Keyboard Shortcuts" onClose={() => setModal(null)}>
                     <pre className="help-pre">{HELP_SNIPPET}</pre>
