@@ -1189,7 +1189,8 @@ export default function App() {
        fxIndex ikut dibawa supaya Apply MENGGANTI slot itu, bukan menambah duplikat. */
     const openTrackEffectEditor = (trackId, effectId, fxIndex) => {
         if (trackId == null || !effectId) return;
-        setModal({ type: 'effect', trackId, effectId, fxIndex });
+        const eff = EFFECTS.find((e) => e.id === effectId) || EFFECTS.find((e) => e.name === effectId);
+        setModal({ type: 'effect', trackId, effectId: eff ? eff.id : effectId, fxIndex });
     };
     /* Sama untuk efek destruktif: bakedIndex dibawa supaya Apply MENGGANTI resep
        itu (audio dirender ulang dari origBuf), bukan menumpuk efek kedua. */

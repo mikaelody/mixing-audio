@@ -100,7 +100,7 @@ export default function BottomFxBar({ track, hasSelection, selStart, selEnd, onA
                                 name={meta ? meta.name : fx.type}
                                 note={note}
                                 title={[meta ? meta.name : fx.type, note, fxDetail(meta, fx.params)].filter(Boolean).join(' — ')}
-                                onEdit={() => meta && onEditFx && onEditFx(meta.id, i)}
+                                onEdit={() => onEditFx && onEditFx(meta ? meta.id : fx.type, i)}
                                 onRemove={() => onRemoveFx(i)}
                             />
                         );
