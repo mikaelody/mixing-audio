@@ -63,6 +63,35 @@ const HELP_SNIPPET = `• Space — Play / Pause
 • File → Export / Download untuk mix ke WAV
 • Draft disimpan di IndexedDB browser (audio ikut tersimpan)`;
 
+/* Rencana untuk satu event wheel di timeline. Dipisah dari komponen supaya
+ percabangannya bisa diuji tanpa layout browser (jsdom clientWidth = 0).
+   - Ctrl/⌘  → zoom, anchored di kursor
+   - deltaX  → biarkan native overflow-x (trackpad geser mendatar)
+   - deltaY  → geser mendatar KALAU tidak ada ruang scroll vertikal, atau Shift
+               ditahan; mouse wheel biasa hanya punya deltaY, tanpa ini ia mati. */
+export function wheelPlan(e, el) {
+    if (e.ctrlKey || e.metaKey) return { kind: 'zoom', factor: e.deltaY < 0 ? 1.4 : 1 / 1.4 };
+    if (e.deltaX !== 0) return { kind: 'native' };
+    if (!e.shiftKey && el.scrollHeight - el.clientHeight > 1) return { kind: 'native' };
+    const max = el.scrollWidth - el.clientWidth;
+    if (max <= 0) return { kind: 'native' };
+    const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY; // DOM_DELTA_LINE
+    return { kind: 'x', next: Math.max(0, Math.min(max, el.scrollLeft + dy)) };
+}
+
+/* Auto-follow playhead saat play. `armed` = false berarti user baru menggeser
+ timeline sendiri, jadi JANGAN rebut scroll-nya (bug: "scroll saat play malah
+ balik ke bagian yang sedang berjalan"). Follow menyala lagi sendiri begitu
+ playhead kembali masuk viewport — tanpa timer, tanpa tombol. */
+export function followPlan(px, scrollLeft, clientWidth, armed) {
+    if (clientWidth <= 0) return { armed, scrollTo: null };
+    const margin = clientWidth * 0.25;
+    const outside = px < scrollLeft || px > scrollLeft + clientWidth - margin;
+    if (!outside) return { armed: true, scrollTo: null };
+    if (!armed) return { armed: false, scrollTo: null };
+    return { armed: true, scrollTo: Math.max(0, px - clientWidth * 0.6) };
+}
+
 export default function App() {
     const [tracks, setTracks] = useState([]);
     const [playing, setPlaying] = useState(false);
@@ -118,6 +147,17 @@ export default function App() {
     const [viewW, setViewW] = useState(0);
 
     /* horizontal timeline scroll: shared scrollbar below the track audio */
+    const followRef = useRef(true); // auto-follow playhead aktif? dimatikan saat user scroll manual
+    const selfScrollRef = useRef(-1); // scrollLeft terakhir yang KITA tulis (bukan user)
+    /* satu-satunya jalur untuk menggeser timeline dari kode: menandai nilainya
+     supaya onScroll bisa membedakan "kita" vs "user menggeser sendiri". */
+    const scrollTo = (v) => {
+        const el = scrollRef.current;
+        if (!el) return;
+        selfScrollRef.current = v;
+        el.scrollLeft = v;
+        if (rangeRef.current) rangeRef.current.value = String(v);
+    };
     const channelW = compact ? 196 : 280;
     const maxDur = tracks.reduce((m, t) => Math.max(m, laneDur(t) + (t.offset || 0)), 0);
     const viewW0 = viewW || 0;
@@ -130,7 +170,7 @@ export default function App() {
         const max = Math.max(0, contentWidth - (viewW0 - channelW));
         scrollMaxRef.current = max;
         const el = scrollRef.current;
-        if (el) el.scrollLeft = Math.min(max, el.scrollLeft);
+        if (el) scrollTo(Math.min(max, el.scrollLeft));
         if (rangeRef.current) {
             rangeRef.current.max = String(Math.max(0, max));
             rangeRef.current.value = String(Math.min(max, rangeRef.current.value || 0));
@@ -389,8 +429,7 @@ export default function App() {
                     const el = scrollRef.current;
                     if (!el) return;
                     const clamped = Math.min(newMax, Math.max(0, target));
-                    el.scrollLeft = clamped;
-                    if (rangeRef.current) rangeRef.current.value = String(clamped);
+                    scrollTo(clamped);
                     scrollMaxRef.current = newMax;
                 });
                 pxRef.current = np;
@@ -400,16 +439,25 @@ export default function App() {
         [maxDur, viewW0, channelW],
     );
 
-    /* scroll-wheel zoom on the timeline (Ctrl/⌘ + wheel), anchored at the cursor */
+    /* wheel di timeline: Ctrl/⌘ = zoom (anchored di kursor), sisanya scroll.
+     Mouse wheel HANYA menghasilkan deltaY, jadi kalau tidak ada ruang scroll
+     vertikal (kasus umum: 1-2 track) deltaY dipakai untuk menggeser timeline
+     horizontal — kalau tidak, wheel terasa mati. Shift = paksa horizontal.
+     deltaX (trackpad) dibiarkan ke native overflow-x. */
     useEffect(() => {
         const el = scrollRef.current;
         if (!el) return;
         const onWheel = (e) => {
-            if (!e.ctrlKey && !e.metaKey) return;
+            const plan = wheelPlan(e, el);
+            if (plan.kind === 'native') return;
             e.preventDefault();
-            const rect = el.getBoundingClientRect();
-            const factor = e.deltaY < 0 ? 1.4 : 1 / 1.4;
-            zoomAt(factor, e.clientX - rect.left);
+            if (plan.kind === 'zoom') {
+                const rect = el.getBoundingClientRect();
+                zoomAt(plan.factor, e.clientX - rect.left);
+            } else {
+                followRef.current = false; // scroll manual menang atas auto-follow
+                el.scrollLeft = plan.next;
+            }
         };
         el.addEventListener('wheel', onWheel, { passive: false });
         return () => el.removeEventListener('wheel', onWheel);
@@ -431,8 +479,7 @@ export default function App() {
                 const target = anchor * (np / p) - (el ? el.clientWidth / 2 : 0);
                 requestAnimationFrame(() => {
                     const clamped = Math.min(newMax, Math.max(0, target));
-                    if (el) el.scrollLeft = clamped;
-                    if (rangeRef.current) rangeRef.current.value = String(clamped);
+                    scrollTo(clamped);
                     scrollMaxRef.current = newMax;
                 });
                 pxRef.current = np;
@@ -458,8 +505,7 @@ export default function App() {
             setPxPerSec(np);
             requestAnimationFrame(() => {
                 const e2 = scrollRef.current;
-                if (e2) e2.scrollLeft = 0;
-                if (rangeRef.current) rangeRef.current.value = '0';
+                if (e2) scrollTo(0);
                 scrollMaxRef.current = 0;
             });
         },
@@ -486,8 +532,7 @@ export default function App() {
             const max = scrollMaxRef.current;
             let target = left - view / 2 + w / 2;
             target = Math.max(0, Math.min(max, target));
-            el.scrollLeft = target;
-            if (rangeRef.current) rangeRef.current.value = String(target);
+            scrollTo(target);
         },
         [tracks, pxPerSec],
     );
@@ -726,6 +771,7 @@ export default function App() {
             } catch (e) {}
         }
         playStartRef.current = { real: performance.now(), transport: Tone.Transport.seconds };
+        followRef.current = true; // play baru = ikuti playhead lagi
         setPlaying(true);
         flash('Play');
     };
@@ -787,14 +833,13 @@ export default function App() {
                     const px = p * pxRef.current;
                     playheadRef.current.style.transform = `translateX(${px}px)`;
 
-                    /* keep the playhead in view while playing: scroll the native container
-             so it sits at ~60% of the viewport when it leaves the right margin. */
+                    /* keep the playhead in view while playing — TAPI jangan rebut scroll
+             kalau user baru menggeser timeline sendiri (followRef=false). */
                     const el = scrollRef.current;
                     if (el) {
-                        const margin = el.clientWidth * 0.25;
-                        if (px < el.scrollLeft || px > el.scrollLeft + el.clientWidth - margin) {
-                            el.scrollLeft = Math.max(0, px - el.clientWidth * 0.6);
-                        }
+                        const fp = followPlan(px, el.scrollLeft, el.clientWidth, followRef.current);
+                        followRef.current = fp.armed;
+                        if (fp.scrollTo != null) scrollTo(fp.scrollTo);
                     }
                 }
 
@@ -875,8 +920,7 @@ export default function App() {
                 if (px < el.scrollLeft + 8) target = px - 8;
                 else if (px > el.scrollLeft + view - 8) target = px - view + 8;
                 if (target != null) {
-                    el.scrollLeft = Math.max(0, Math.min(max, target));
-                    if (rangeRef.current) rangeRef.current.value = String(el.scrollLeft);
+                    scrollTo(Math.max(0, Math.min(max, target)));
                 }
             }
         },
@@ -1835,9 +1879,16 @@ export default function App() {
                                 ref={channelColRef}
                                 style={{ marginBottom: `calc(var(--sbar-h) + ${hbarH}px)` }}
                                 onWheel={(e) => {
-                                    /* sidebar tidak punya scroll sendiri — teruskan wheel ke timeline */
+                                    /* sidebar tidak punya scroll sendiri — teruskan wheel ke timeline
+                       (vertikal kalau ada ruang, kalau tidak: geser mendatar) */
                                     const el = scrollRef.current;
                                     if (!el) return;
+                                    const plan = wheelPlan(e, el);
+                                    if (plan.kind === 'x') {
+                                        followRef.current = false;
+                                        scrollTo(plan.next);
+                                        return;
+                                    }
                                     el.scrollTop += e.deltaY;
                                     if (channelInnerRef.current) channelInnerRef.current.style.transform = 'translateY(' + -el.scrollTop + 'px)';
                                 }}
@@ -1879,6 +1930,9 @@ export default function App() {
                                 onScroll={(e) => {
                                     /* update the range input imperatively — no React state on the scroll path */
                                     if (rangeRef.current) rangeRef.current.value = String(e.target.scrollLeft);
+                                    /* scroll yang BUKAN dari scrollTo() = user menggeser sendiri → matikan
+                     auto-follow supaya playhead tidak menariknya balik saat play */
+                                    if (Math.abs(e.target.scrollLeft - selfScrollRef.current) > 1) followRef.current = false;
                                     /* mirror vertical scroll ke sidebar via transform (bukan scrollTop) —
                      sidebar tidak punya scrollbar sendiri, jadi jangkauannya selalu pas */
                                     if (channelInnerRef.current) channelInnerRef.current.style.transform = 'translateY(' + -e.target.scrollTop + 'px)';
