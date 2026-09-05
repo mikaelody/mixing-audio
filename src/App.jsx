@@ -57,6 +57,7 @@ const HELP_SNIPPET = `• Space — Play / Pause
 • Klik chip efek (mis. "Gain ✕") untuk menghapusnya
 • Klik "+ Efek" pada track untuk menambah efek
 • Klik ruler / waveform untuk seek
+• Scroll pada timeline untuk geser mendatar (Shift+scroll bila banyak track)
 • ⌘+scroll pada timeline untuk zoom
 • Edit → Snap to Grid untuk magnet ke beat
 • Edit → Metronome untuk click saat play

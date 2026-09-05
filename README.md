@@ -17,7 +17,8 @@ perangkat Anda sendiri.
 ### Track & timeline
 - Multitrack tanpa batas jumlah — tiap track punya volume (dB), pan L/R, mute, solo, warna, dan nama sendiri
 - Drag clip untuk menggeser posisi di timeline; **Snap to Grid** untuk magnet ke beat
-- Zoom timeline dengan `⌘/Ctrl + scroll`, ter-anchor di posisi kursor
+- Zoom timeline dengan `⌘/Ctrl + scroll`, ter-anchor di posisi kursor; scroll biasa menggeser timeline mendatar (`Shift + scroll` kalau ada banyak track)
+- Saat play, timeline mengikuti playhead sendiri — tapi begitu kamu scroll manual, follow berhenti sampai playhead balik ke layar
 - Klik ruler atau waveform untuk seek — playback lanjut dari titik itu
 - Seleksi region: `Shift + drag` pada waveform, lalu terapkan efek hanya ke bagian itu
 - VU meter real-time per track, mode Compact untuk banyak track sekaligus
@@ -96,6 +97,8 @@ otomatis agar tidak menabrak kuota penyimpanan browser.
 | `⌘S` | Save Draft Locally |
 | `⌘M` | Metronome on/off |
 | `⌘` + scroll | Zoom timeline |
+| scroll | Geser timeline mendatar |
+| `Shift` + scroll | Geser mendatar (saat scroll biasa dipakai untuk vertikal) |
 | `Shift` + drag | Pilih region pada clip |
 
 Pada Windows/Linux, `⌘` = `Ctrl`. Sisa perintah dijalankan lewat dropdown topbar.
