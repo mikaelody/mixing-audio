@@ -1205,7 +1205,8 @@ export default function App() {
        itu (audio dirender ulang dari origBuf), bukan menumpuk efek kedua. */
     const openBakedEffectEditor = (trackId, effectId, bakedIndex) => {
         if (trackId == null || !effectId) return;
-        setModal({ type: 'effect', trackId, effectId, bakedIndex });
+        const eff = EFFECTS.find((e) => e.id === effectId) || EFFECTS.find((e) => e.name === effectId);
+        setModal({ type: 'effect', trackId, effectId: eff ? eff.id : effectId, bakedIndex });
     };
 
     /* Nilai awal modal saat MENGEDIT efek terpasang. Dua sumber: slot fxChain
@@ -1633,7 +1634,9 @@ export default function App() {
     const openHelp = () => setModal({ type: 'help' });
     const openWhatsNew = () => setModal({ type: 'about' });
 
-    const modalEffect = modal && modal.type === 'effect' ? EFFECTS.find((e) => e.id === modal.effectId) : null;
+    const modalEffect = modal && modal.type === 'effect'
+        ? EFFECTS.find((e) => e.id === modal.effectId) || EFFECTS.find((e) => e.name === modal.effectId)
+        : null;
 
     /* ---------- keyboard shortcuts ---------- */
     useEffect(() => {
