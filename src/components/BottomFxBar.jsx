@@ -25,13 +25,13 @@ export default function BottomFxBar({ track, hasSelection, selStart, selEnd, onA
     /* satu bentuk slot untuk ketiga sumber — biar tidak ada jalur yang lupa
        menampilkan keterangan atau tombol hapus. */
     const Slot = ({ idx, name, note, title, onEdit, onRemove, removeTitle }) => (
-        <div className="fx-slot" title={title}>
+        <div className="fx-slot" title={title} onClick={onEdit}>
             <span className="fx-slot-idx">{idx}</span>
-            <span className="fx-slot-main" onClick={onEdit} title="Klik untuk edit parameter">
+            <span className="fx-slot-main">
                 <span className="fx-slot-name">{name}</span>
                 {note ? <span className="fx-slot-note">{note}</span> : null}
             </span>
-            <button className="fx-slot-x" onClick={onRemove} title={removeTitle || 'Hapus efek ini'}>
+            <button className="fx-slot-x" onClick={(e) => { e.stopPropagation(); onRemove && onRemove(); }} title={removeTitle || 'Hapus efek ini'}>
                 ✕
             </button>
         </div>
