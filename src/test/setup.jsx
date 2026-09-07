@@ -12,24 +12,26 @@ const Transport = {
   _paused: false,
 }
 
-const Player = vi.fn().mockImplementation(() => ({
-  buffer: null,
-  state: 'stopped',
-  _synced: false,
-  playbackRate: 1,
-  mute: false,
-  volume: { value: 0 },
-  pan: { value: 0 },
-  connect: vi.fn().mockReturnThis(),
-  disconnect: vi.fn().mockReturnThis(),
-  start: vi.fn(),
-  stop: vi.fn(),
-  pause: vi.fn(),
-  sync: vi.fn().mockReturnThis(),
-  unsync: vi.fn().mockReturnThis(),
-  dispose: vi.fn(),
-  toDestination: vi.fn().mockReturnThis(),
-}))
+const Player = vi.fn(function () {
+  return {
+    buffer: null,
+    state: 'stopped',
+    _synced: false,
+    playbackRate: 1,
+    mute: false,
+    volume: { value: 0 },
+    pan: { value: 0 },
+    connect: vi.fn().mockReturnThis(),
+    disconnect: vi.fn().mockReturnThis(),
+    start: vi.fn(),
+    stop: vi.fn(),
+    pause: vi.fn(),
+    sync: vi.fn().mockReturnThis(),
+    unsync: vi.fn().mockReturnThis(),
+    dispose: vi.fn(),
+    toDestination: vi.fn().mockReturnThis(),
+  }
+})
 
 /* function, bukan arrow: applyEffect memanggilnya dengan `new`, dan arrow
    function bukan constructor (vitest 4 melempar "is not a constructor"). */
@@ -42,73 +44,91 @@ const Gain = vi.fn(function (value, units) {
   }
 })
 
-const Volume = vi.fn().mockImplementation(() => ({
-  volume: { value: 0 },
-  connect: vi.fn().mockReturnThis(),
-  disconnect: vi.fn().mockReturnThis(),
-  toDestination: vi.fn().mockReturnThis(),
-}))
+const Volume = vi.fn(function () {
+  return {
+    volume: { value: 0 },
+    connect: vi.fn().mockReturnThis(),
+    disconnect: vi.fn().mockReturnThis(),
+    toDestination: vi.fn().mockReturnThis(),
+  }
+})
 
-const Panner = vi.fn().mockImplementation(() => ({
-  pan: { value: 0 },
-  connect: vi.fn().mockReturnThis(),
-  disconnect: vi.fn().mockReturnThis(),
-}))
+const Panner = vi.fn(function () {
+  return {
+    pan: { value: 0 },
+    connect: vi.fn().mockReturnThis(),
+    disconnect: vi.fn().mockReturnThis(),
+  }
+})
 
-const Meter = vi.fn().mockImplementation(() => ({
-  getValue: () => -100,
-  connect: vi.fn().mockReturnThis(),
-  disconnect: vi.fn().mockReturnThis(),
-  toDestination: vi.fn().mockReturnThis(),
-}))
+const Meter = vi.fn(function () {
+  return {
+    getValue: () => -100,
+    connect: vi.fn().mockReturnThis(),
+    disconnect: vi.fn().mockReturnThis(),
+    toDestination: vi.fn().mockReturnThis(),
+  }
+})
 
-const Compressor = vi.fn().mockImplementation(() => ({
-  threshold: { value: -24 },
-  knee: { value: 30 },
-  ratio: { value: 12 },
-  attack: { value: 0.003 },
-  release: { value: 0.25 },
-  connect: vi.fn().mockReturnThis(),
-  disconnect: vi.fn().mockReturnThis(),
-}))
+const Compressor = vi.fn(function () {
+  return {
+    threshold: { value: -24 },
+    knee: { value: 30 },
+    ratio: { value: 12 },
+    attack: { value: 0.003 },
+    release: { value: 0.25 },
+    connect: vi.fn().mockReturnThis(),
+    disconnect: vi.fn().mockReturnThis(),
+  }
+})
 
-const Limiter = vi.fn().mockImplementation(() => ({
-  threshold: { value: -0.3 },
-  connect: vi.fn().mockReturnThis(),
-  disconnect: vi.fn().mockReturnThis(),
-}))
+const Limiter = vi.fn(function () {
+  return {
+    threshold: { value: -0.3 },
+    connect: vi.fn().mockReturnThis(),
+    disconnect: vi.fn().mockReturnThis(),
+  }
+})
 
-const FeedbackDelay = vi.fn().mockImplementation(() => ({
-  delayTime: { value: 0.35 },
-  feedback: { value: 0.35 },
-  wet: { value: 0.3 },
-  connect: vi.fn().mockReturnThis(),
-  disconnect: vi.fn().mockReturnThis(),
-}))
+const FeedbackDelay = vi.fn(function () {
+  return {
+    delayTime: { value: 0.35 },
+    feedback: { value: 0.35 },
+    wet: { value: 0.3 },
+    connect: vi.fn().mockReturnThis(),
+    disconnect: vi.fn().mockReturnThis(),
+  }
+})
 
-const Distortion = vi.fn().mockImplementation(() => ({
-  distortion: { value: 0.4 },
-  connect: vi.fn().mockReturnThis(),
-  disconnect: vi.fn().mockReturnThis(),
-}))
+const Distortion = vi.fn(function () {
+  return {
+    distortion: { value: 0.4 },
+    connect: vi.fn().mockReturnThis(),
+    disconnect: vi.fn().mockReturnThis(),
+  }
+})
 
-const Reverb = vi.fn().mockImplementation(() => ({
-  decay: { value: 3 },
-  wet: { value: 0.25 },
-  preDelay: { value: 0.02 },
-  generate: vi.fn().mockResolvedValue(undefined),
-  connect: vi.fn().mockReturnThis(),
-  disconnect: vi.fn().mockReturnThis(),
-}))
+const Reverb = vi.fn(function () {
+  return {
+    decay: { value: 3 },
+    wet: { value: 0.25 },
+    preDelay: { value: 0.02 },
+    generate: vi.fn().mockResolvedValue(undefined),
+    connect: vi.fn().mockReturnThis(),
+    disconnect: vi.fn().mockReturnThis(),
+  }
+})
 
-const Filter = vi.fn().mockImplementation(() => ({
-  frequency: { value: 1000 },
-  Q: { value: 1 },
-  gain: { value: 0 },
-  type: 'peaking',
-  connect: vi.fn().mockReturnThis(),
-  disconnect: vi.fn().mockReturnThis(),
-}))
+const Filter = vi.fn(function () {
+  return {
+    frequency: { value: 1000 },
+    Q: { value: 1 },
+    gain: { value: 0 },
+    type: 'peaking',
+    connect: vi.fn().mockReturnThis(),
+    disconnect: vi.fn().mockReturnThis(),
+  }
+})
 
 const context = { sampleRate: 44100, state: 'running', rawContext: null }
 const Destination = { connect: vi.fn().mockReturnThis(), disconnect: vi.fn().mockReturnThis(), volume: { value: 0 } }

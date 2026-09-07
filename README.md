@@ -215,8 +215,8 @@ dengan mengukur RMS PCM di dalam dan di luar region yang diproses.
 
 ## Tema
 
-Dark teal — aksen `#4ed9c0` di atas `#0a0c0f`/`#12161c`. Font: Space Grotesk
-(judul), Inter (UI), JetBrains Mono (angka & waktu). Semua ukuran panel dan
+Warm earthy dark — background `#1E1A17`, aksen `#C6893E` (brass) & `#6E9484` (teal).
+Font: Oswald (judul), IBM Plex Mono (UI, label, semua teks).
 tinggi baris didefinisikan sebagai CSS variable di `:root`, jadi layout dihitung
 dari satu sumber, bukan angka ajaib yang tersebar.
 
