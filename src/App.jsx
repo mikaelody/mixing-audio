@@ -1909,29 +1909,30 @@ export default function App() {
                             >
                                 <div className="channel-strips-inner" ref={channelInnerRef}>
                                     {tracks.map((t, i) => (
-                                        <ChannelStrip
-                                            key={t.id}
-                                            t={t}
-                                            index={i}
-                                            total={tracks.length}
-                                            selected={selected === t.id}
-                                            compact={compact}
-                                            vu={vu}
-                                            vuLevel={vuLevels[t.id] || 0}
-                                            onSelect={() => focusTrack(t.id)}
-                                            onMute={() => toggleMute(t.id)}
-                                            onSolo={() => toggleSolo(t.id)}
-                                            onRemove={() => removeTrack(t.id)}
-                                            onRename={(n) => renameTrack(t.id, n)}
-                                            onVol={(v) => setVol(t.id, v)}
-                                            onPan={(v) => setPan(t.id, v)}
-                                            onReplace={(f) => replaceBuffer(t.id, f)}
-                                            onEffects={() => setModal({ type: 'effect', trackId: t.id, effectId: null })}
-                                            onRemoveFx={(i) => removeFx(t.id, i)}
-                                            onCollapse={() => toggleCollapse(t.id)}
-                                            onMoveTrack={moveTrack}
-                                        />
-                                    ))}
+                                         <ChannelStrip
+                                             key={t.id}
+                                             t={t}
+                                             index={i}
+                                             total={tracks.length}
+                                             selected={selected === t.id}
+                                             compact={compact}
+                                             vu={vu}
+                                             vuLevel={vuLevels[t.id] || 0}
+                                             onSelect={() => focusTrack(t.id)}
+                                             onMute={() => toggleMute(t.id)}
+                                             onSolo={() => toggleSolo(t.id)}
+                                             onRemove={() => removeTrack(t.id)}
+                                             onRename={(n) => renameTrack(t.id, n)}
+                                             onVol={(v) => setVol(t.id, v)}
+                                             onPan={(v) => setPan(t.id, v)}
+                                             onReplace={(f) => replaceBuffer(t.id, f)}
+                                             onEffects={() => setModal({ type: 'effect', trackId: t.id, effectId: null })}
+                                             onRemoveFx={(i) => removeFx(t.id, i)}
+                                             onRemoveBaked={(i) => removeBaked(t.id, i)}
+                                             onCollapse={() => toggleCollapse(t.id)}
+                                             onMoveTrack={moveTrack}
+                                         />
+                                     ))}
                                 </div>
                             </div>
                         </div>

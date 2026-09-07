@@ -6,7 +6,7 @@ import React, { useRef, useState } from 'react'
    Bottom: volume slider (with live dB), pan knob (L/R), optional VU meter.
    Supports drag-and-drop reorder via HTML5 drag. */
 export default function ChannelStrip({ t, selected = false, compact = false, vu = true, vuLevel = 0, index = 0, total = 0,
-  onSelect, onMute, onSolo, onRemove, onRename, onVol, onPan, onReplace, onEffects, onRemoveFx, onMoveTrack,
+  onSelect, onMute, onSolo, onRemove, onRename, onVol, onPan, onReplace, onEffects, onRemoveFx, onRemoveBaked, onMoveTrack,
   onCollapse }) {
     const fileRef = useRef(null)
     const moreRef = useRef(null)
@@ -133,11 +133,24 @@ export default function ChannelStrip({ t, selected = false, compact = false, vu 
                             className="fx-chip add"
                             onClick={(e) => { e.stopPropagation(); onEffects() }}
                         >+ Fx</span>
-                        {/* chip efek terpasang — ikut di baris yang sama supaya tinggi strip tetap */}
+                        {/* chip efek terpasang (baked + realtime fxChain) — ikut di baris yang sama supaya tinggi strip tetap */}
                         <div className="ch-fx">
+                            {(t.baked || []).map((r, i) => (
+                                <span
+                                    key={'b-' + i}
+                                    className="fx-chip"
+                                    title={'Hapus ' + r.id}
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        onRemoveBaked && onRemoveBaked(i)
+                                    }}
+                                >
+                                    {r.id} ✕
+                                </span>
+                            ))}
                             {(t.fxChain || []).map((fx, i) => (
                                 <span
-                                    key={i}
+                                    key={'f-' + i}
                                     className="fx-chip"
                                     title={'Hapus ' + fx.type}
                                     onClick={(e) => {
