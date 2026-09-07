@@ -2045,6 +2045,15 @@ export default function App() {
                     initialParams={effectInitialParams(modal)}
                     onClose={() => setModal(null)}
                     onApply={(params) => (modal.partial ? applyEffectToSelection(modal.trackId ?? null, modal.effectId, params) : onEffectApply(modal.trackId ?? null, modal.effectId, params, modal.fxIndex ?? null, modal.bakedIndex ?? null))}
+                    onDelete={
+                        modal.fxIndex != null
+                            ? () => removeFx(modal.trackId, modal.fxIndex)
+                            : modal.bakedIndex != null
+                              ? () => removeBaked(modal.trackId, modal.bakedIndex)
+                              : modal.effectId === 'playbackRate'
+                                ? () => onEffectApply(modal.trackId, 'playbackRate', { prRate: 1, prPreserve: false })
+                                : null
+                    }
                     previewBuffer={previewBuffer}
                 />
             )}

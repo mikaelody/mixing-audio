@@ -11,7 +11,7 @@ import { processEffect } from '../audio/applyEffect';
 /* Effect configuration popup.
    Props: effect (EFFECTS_BY_ID entry), onApply(params), onClose, previewBuffer() -> AudioBuffer|null,
    initialParams (nilai tersimpan saat mengedit efek yang sudah terpasang) */
-export default function EffectModal({ effect, onApply, onClose, previewBuffer, initialParams }) {
+export default function EffectModal({ effect, onApply, onDelete, onClose, previewBuffer, initialParams }) {
     const eff = effect;
     const [params, setParams] = useState(() => {
         const p = {};
@@ -109,8 +109,20 @@ export default function EffectModal({ effect, onApply, onClose, previewBuffer, i
         onClose();
     };
 
+    const handleDelete = onDelete
+        ? () => {
+              if (previewRef.current) {
+                  try {
+                      previewRef.current.player.stop();
+                  } catch (e) {}
+              }
+              onDelete();
+              onClose();
+          }
+        : null;
+
     return (
-        <Modal title={eff.name} onApply={apply} onClose={onClose} wide={eff.wide}>
+        <Modal title={eff.name} onApply={apply} onDelete={handleDelete} onClose={onClose} wide={eff.wide}>
             {eff.desc && <div className="modal-desc">{eff.desc}</div>}
 
             <div className="modal-toolbar">
