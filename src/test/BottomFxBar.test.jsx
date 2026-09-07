@@ -43,29 +43,31 @@ describe('BottomFxBar — remove buttons', () => {
       />
     )
 
-    // Total slots: 1 (Rate) + 2 (Baked) + 2 (Fx) = 5
-    const removeBtns = screen.getAllByRole('button', { name: /✕/i })
-    // removeBtns includes the close button in header + 5 slot remove buttons = 6 buttons
-    expect(removeBtns.length).toBe(6)
+    // Total slots: 1 (Rate) + 2 (Baked) + 2 (Fx) = 5 slot remove buttons + 1 header close button
+    const closeHeaderBtn = screen.getByTitle('Tutup rack')
+    expect(closeHeaderBtn).toBeDefined()
+
+    const removeBtns = document.querySelectorAll('.fx-slot-x')
+    expect(removeBtns.length).toBe(5)
 
     // Click remove speed (first slot remove button)
-    fireEvent.click(removeBtns[1])
+    fireEvent.click(removeBtns[0])
     expect(onRemoveRate).toHaveBeenCalledTimes(1)
 
     // Click remove baked 0
-    fireEvent.click(removeBtns[2])
+    fireEvent.click(removeBtns[1])
     expect(onRemoveBaked).toHaveBeenCalledWith(0)
 
     // Click remove baked 1
-    fireEvent.click(removeBtns[3])
+    fireEvent.click(removeBtns[2])
     expect(onRemoveBaked).toHaveBeenCalledWith(1)
 
     // Click remove realtime fx 0
-    fireEvent.click(removeBtns[4])
+    fireEvent.click(removeBtns[3])
     expect(onRemoveFx).toHaveBeenCalledWith(0)
 
     // Click remove realtime fx 1
-    fireEvent.click(removeBtns[5])
+    fireEvent.click(removeBtns[4])
     expect(onRemoveFx).toHaveBeenCalledWith(1)
   })
 })
