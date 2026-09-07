@@ -20,7 +20,7 @@ function drawWaveform(canvas, buffer, color, offsetPx, durationPx){
   const amp = h/2 - 4
 
   /* clip background */
-  ctx.fillStyle = color || '#4ed9c0'
+  ctx.fillStyle = color || '#C6893E'
   ctx.globalAlpha = 0.08
   ctx.beginPath()
   ctx.roundRect(offsetPx, 0, durationPx, h, 4)
@@ -28,7 +28,7 @@ function drawWaveform(canvas, buffer, color, offsetPx, durationPx){
   ctx.globalAlpha = 1
 
   /* clip border */
-  ctx.strokeStyle = color || '#4ed9c0'
+  ctx.strokeStyle = color || '#C6893E'
   ctx.globalAlpha = 0.3
   ctx.lineWidth = 1
   ctx.beginPath()
@@ -48,7 +48,7 @@ function drawWaveform(canvas, buffer, color, offsetPx, durationPx){
     ctx.lineTo(offsetPx+x, mid+min*amp)
     ctx.lineTo(offsetPx+x, mid+max*amp)
   }
-  ctx.strokeStyle = color || '#4ed9c0'
+  ctx.strokeStyle = color || '#C6893E'
   ctx.lineWidth = 1
   ctx.globalAlpha = 0.85
   ctx.stroke()
@@ -81,7 +81,7 @@ export default function TrackLane({ t, width, pxPerSec=80, waveColors=true,
     if(!t.buf || !canvasRef.current) return
     /* redraw juga saat tinggi lane berubah (compact / collapsed) — canvas memakai
        clientHeight, jadi dependency-nya harus ikut flag tinggi */
-    drawWaveform(canvasRef.current, t.buf, waveColors ? t.color : '#4ed9c0', 0, durPx)
+    drawWaveform(canvasRef.current, t.buf, waveColors ? t.color : '#C6893E', 0, durPx)
   },[t.buf, t.color, waveColors, width, pxPerSec, t.offset, dragging, durPx, compact, t.collapsed])
 
   const handleClick = (e)=>{

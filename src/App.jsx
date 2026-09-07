@@ -2178,7 +2178,7 @@ export default function App() {
 }
 
 /* ---------- helpers ---------- */
-const TRACK_COLORS = ['#4ed9c0', '#9d8cf2', '#f2b84b', '#f2665e', '#6ab7ff', '#f28cd0'];
+const TRACK_COLORS = ['#C6893E', '#E3A75A', '#B5482F', '#A99C89', '#6E9484', '#ECE2D0'];
 function trackColor(i) {
     return TRACK_COLORS[i % TRACK_COLORS.length];
 }
